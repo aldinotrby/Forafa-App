@@ -1,0 +1,269 @@
+Requirement → User Flow → Information Architecture → Sitemap → Wireframe → Component System → State UI → API contract yang dibutuhkan frontend → baru implementasi.
+
+
+| Deliverable            | Tanggung jawab |
+| ---------------------- | -------------- |
+| Figma Wireframe        | Kamu           |
+| High-Fidelity Mockup   | Kamu           |
+| User Flow              | Kamu           |
+| Navigation Sitemap     | Kamu           |
+| UI Component Catalog   | Kamu           |
+| Styling Guidelines     | Kamu           |
+| Form Validation Rules  | Kamu           |
+| Frontend Quickstart    | Kamu           |
+| Screenshot/GIF pada PR | Kamu           |
+
+
+
+
+
+1. Finalisasi fitur Forafa-App
+             ↓
+2. User Flow
+             ↓
+3. Sitemap / Routing
+             ↓
+4. Daftar halaman frontend
+             ↓
+5. Wireframe
+             ↓
+6. UI Design System
+             ↓
+7. Component Architecture
+             ↓
+8. Form Validation
+             ↓
+9. State Management
+             ↓
+10. API Contract → Integrasi Backend
+             ↓
+11. Testing UI
+             ↓
+12. PR + Screenshot/GIF
+
+
+
+
+
+
+FRONTEND & UI/UX
+│
+├── 1. UI/UX Design
+│   ├── User Flow
+│   ├── Sitemap
+│   ├── Wireframe
+│   ├── High-Fidelity UI
+│   └── Responsive Design
+│
+├── 2. Frontend Development
+│   ├── React
+│   ├── Tailwind CSS
+│   ├── Components
+│   ├── Pages
+│   └── Routing
+│
+├── 3. Frontend Logic
+│   ├── State Management
+│   ├── Form Validation
+│   ├── Authentication State
+│   └── API Integration
+│
+├── 4. GitHub Governance
+│   ├── Feature Branch
+│   ├── Commit
+│   ├── Pull Request
+│   ├── Screenshot/GIF
+│   └── Review Backend
+│
+└── 5. Documentation
+    ├── Component Catalog
+    ├── Styling Guideline
+    ├── Validation Rules
+    ├── Frontend Quickstart
+    └── Design Documentation
+
+
+
+
+CONTOH BAGIAN CLIENT
+
+client/
+├── public/
+│
+├── src/
+│   ├── assets/
+│   │
+│   ├── components/
+│   │   ├── ui/
+│   │   │   ├── Button.jsx
+│   │   │   ├── Input.jsx
+│   │   │   ├── Modal.jsx
+│   │   │   ├── Card.jsx
+│   │   │   ├── Badge.jsx
+│   │   │   ├── Toast.jsx
+│   │   │   ├── Spinner.jsx
+│   │   │   └── EmptyState.jsx
+│   │   │
+│   │   ├── layout/
+│   │   │   ├── Navbar.jsx
+│   │   │   ├── Sidebar.jsx
+│   │   │   └── DashboardLayout.jsx
+│   │   │
+│   │   └── feature/
+│   │       ├── voting/
+│   │       ├── feedback/
+│   │       └── anonymous/
+│   │
+│   ├── pages/
+│   │   ├── auth/
+│   │   ├── public/
+│   │   └── dashboard/
+│   │
+│   ├── services/
+│   │   ├── api.js
+│   │   ├── authService.js
+│   │   ├── votingService.js
+│   │   ├── feedbackService.js
+│   │   └── anonymousService.js
+│   │
+│   ├── hooks/
+│   ├── contexts/
+│   ├── utils/
+│   ├── validations/
+│   ├── routes/
+│   │
+│   ├── App.jsx
+│   └── main.jsx
+│
+├── package.json
+└── .env.example
+
+
+
+
+CONTOH HASIL LINK
+forafa.app/vote/abc123
+forafa.app/feedback/abc123
+forafa.app/anonymous/username
+
+
+
+
+BAGIAN REGISTRASI USER
+
+Dashboard
+│
+├── Overview
+│
+├── Voting
+│   ├── List
+│   ├── Create
+│   ├── Detail
+│   └── Edit
+│
+├── Kritik & Saran
+│   ├── List
+│   ├── Create
+│   ├── Detail
+│   └── Responses
+│
+├── Pesan Anonymous
+│   ├── List
+│   ├── Create Link
+│   └── Messages
+│
+├── Profile
+└── Settings
+
+
+
+FLOW FORAFA
+
+Landing Page
+     │
+     ├── Login
+     │     ↓
+     │   Dashboard
+     │
+     └── Register
+           ↓
+        Dashboard
+
+
+
+
+MEMBUAT VOTING
+
+Dashboard
+   ↓
+Voting
+   ↓
+Buat Voting
+   ↓
+Isi Form
+   ↓
+Validasi
+   ↓
+Submit
+   ↓
+Voting berhasil dibuat
+   ↓
+Generate Link
+(alur kritik saran dan annonymous juga sama)
+
+
+
+
+ISI LINK HASIL GENERATE
+
+Link Voting
+     ↓
+Halaman Voting
+     ↓
+Isi Nama
+     ↓
+Pilih Opsi
+     ↓
+   Submit
+     ↓
+  Berhasil
+
+
+
+
+Link Kritik & Saran
+        ↓
+Nama
+        ↓
+Pesan
+        ↓
+Submit
+        ↓
+Berhasil
+
+
+
+
+Link Anonymous
+      ↓
+Tulis Pesan
+      ↓
+Kirim
+      ↓
+Pemilik menerima pesan
+
+
+
+
+
+POLA BRANCH GITHUB
+
+feat/client-landing
+feat/client-auth
+feat/client-dashboard
+feat/client-voting
+feat/client-feedback
+feat/client-anonymous
+feat/client-components
+feat/client-responsive
+feat/client-api

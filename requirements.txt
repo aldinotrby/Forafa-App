@@ -1,0 +1,149 @@
+# Forafa-App Requirements
+
+## System Requirements
+
+### Minimum Requirements
+- Node.js: >= 18.0.0
+- npm: >= 8.0.0 (atau yarn >= 1.22.0, atau pnpm >= 7.0.0)
+- RAM: 4GB minimum, 8GB recommended
+- Storage: 1GB free space untuk development
+- OS: Windows 10+, macOS 10.15+, atau Linux (Ubuntu 18.04+)
+
+### Recommended Development Environment
+- Node.js: 20.x LTS atau lebih baru
+- npm: Latest stable version
+- RAM: 16GB untuk optimal performance
+- SSD storage untuk faster build times
+- Modern browser: Chrome 90+, Firefox 88+, Safari 14+, Edge 90+
+
+## Runtime Dependencies
+
+### Core Framework
+- react: ^19.0.0
+- react-dom: ^19.0.0
+
+### Build Tools & Development
+- vite: ^8.0.5
+- @vitejs/plugin-react: ^6.0.0
+- typescript: ^5.7.0
+
+### Styling & UI
+- tailwindcss: ^4.0.0
+- @tailwindcss/vite: ^4.0.0
+
+### Development Tools
+- @types/node: ^22.0.0
+- @types/react: ^19.0.0
+- @types/react-dom: ^19.0.0
+- oxfmt: ^0.2.0
+
+## Browser Support
+
+### Desktop Browsers
+- Chrome: 90+ (recommended: latest)
+- Firefox: 88+ (recommended: latest) 
+- Safari: 14+ (recommended: latest)
+- Edge: 90+ (recommended: latest)
+
+### Mobile Browsers
+- Chrome Mobile: 90+
+- Safari Mobile: 14+
+- Firefox Mobile: 88+
+- Samsung Internet: 15+
+
+## Development Environment Setup
+
+### Required Software
+1. **Node.js & npm**
+   - Download from: https://nodejs.org/
+   - Verify installation: `node --version` && `npm --version`
+
+2. **Git**
+   - Download from: https://git-scm.com/
+   - Verify installation: `git --version`
+
+3. **Code Editor (Recommended)**
+   - Visual Studio Code
+   - Extensions: TypeScript, Tailwind CSS IntelliSense, ES7+ React snippets
+
+### Optional Tools
+- **Package Managers (Alternative)**
+  - Yarn: https://yarnpkg.com/
+  - pnpm: https://pnpm.io/
+
+- **Development Tools**
+  - React Developer Tools (Browser Extension)
+  - Redux DevTools (jika menggunakan Redux)
+
+## Network Requirements
+
+### Development
+- Internet connection untuk:
+  - Installing dependencies dari npm registry
+  - Downloading TypeScript definitions
+  - Accessing documentation dan resources
+
+### Production
+- CDN support untuk optimal performance
+- HTTPS certificate (recommended untuk production)
+- Domain name (optional)
+
+## Performance Specifications
+
+### Build Performance
+- Initial build: ~30-60 seconds (depending on system)
+- Hot reload: <1 second untuk component changes
+- Full rebuild: ~10-30 seconds untuk major changes
+
+### Runtime Performance
+- First contentful paint: <2 seconds
+- Time to interactive: <3 seconds  
+- Bundle size: ~500KB (gzipped)
+- Memory usage: <100MB untuk typical usage
+
+## Security Requirements
+
+### Development
+- Keep dependencies updated
+- Use official npm packages only
+- Scan untuk vulnerabilities: `npm audit`
+
+### Production
+- HTTPS encryption (required)
+- Content Security Policy (recommended)
+- Environment variable protection
+- Regular security updates
+
+## Deployment Requirements
+
+### Static Hosting (Recommended)
+- Netlify, Vercel, GitHub Pages, atau similar
+- Support untuk SPA routing
+- HTTPS support
+- Environment variables support
+
+### Server Requirements (jika self-hosted)
+- Node.js server atau static file server
+- Reverse proxy (nginx/Apache) untuk production
+- SSL certificate
+- Backup strategy
+
+## Additional Notes
+
+### Development Notes
+- Hot Module Replacement (HMR) enabled untuk fast development
+- TypeScript strict mode enabled
+- ESLint dan Prettier recommended untuk code quality
+- Git hooks dapat disetup untuk pre-commit checks
+
+### Production Notes  
+- Source maps generated untuk debugging
+- Asset optimization automatic via Vite
+- Tree shaking enabled untuk smaller bundles
+- Browser caching strategy recommended
+
+### Troubleshooting
+- Clear node_modules dan reinstall jika dependency conflicts
+- Update Node.js jika build errors terjadi
+- Check browser console untuk runtime errors
+- Use React DevTools untuk component debugging

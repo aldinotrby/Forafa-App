@@ -1,154 +1,262 @@
 # Forafa-App
 
-**Dengar suara publik, tanpa ribet.**
+<div align="center">
 
-Forafa-App adalah aplikasi web yang memungkinkan pengguna untuk membuat dan mengelola sistem voting, kritik & saran, dan pesan anonim melalui satu public link dengan dashboard terintegrasi.
+![Forafa-App Logo](https://img.shields.io/badge/Forafa-App-0f766e?style=for-the-badge&logo=react&logoColor=white)
 
-## 🚀 Fitur
+**Platform Partisipasi Publik Digital**
 
-- **Voting System** - Sistem pemungutan suara digital
-- **Kritik & Saran** - Platform feedback dan masukan
-- **Anonymous Messages** - Pesan anonim untuk komunikasi bebas
-- **Dashboard Terintegrasi** - Panel admin untuk mengelola semua aktivitas
-- **Public Link Sharing** - Berbagi dengan mudah melalui link publik
-- **Role-based Access** - Sistem role User dan Administrator
+*Dengar suara publik, tanpa ribet*
+
+[![React](https://img.shields.io/badge/React-19.0.0-61DAFB?style=flat-square&logo=react&logoColor=white)](https://reactjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7.0-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-8.0.5-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.0.0-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+
+</div>
+
+## 📋 Deskripsi
+
+Forafa-App adalah platform digital modern untuk partisipasi publik yang memungkinkan organisasi, komunitas, atau pemerintahan daerah untuk mendengar dan mengumpulkan suara masyarakat dengan cara yang efektif dan terstruktur.
+
+### ✨ Fitur Utama
+
+- 🗳️ **Voting System** - Pemungutan suara digital untuk berbagai keperluan
+- 💬 **Feedback & Saran** - Sistem pengumpulan kritik dan saran terstruktur  
+- 🕵️ **Anonymous Messaging** - Pesan anonim untuk meningkatkan transparansi
+- 👥 **User Management** - Sistem manajemen pengguna dengan role-based access
+- 📊 **Dashboard Terintegrasi** - Analisis dan monitoring real-time
+- 🔗 **Public Links** - Akses mudah melalui link publik
+
+### 🎯 Kasus Penggunaan
+
+- **Pemerintahan Daerah**: Aspirasi warga, polling kebijakan, feedback layanan publik
+- **Organisasi**: Keputusan internal, survei karyawan, voting pemimpin
+- **Komunitas**: Pemilihan kegiatan, pengumpulan saran, komunikasi anonim
+- **Institusi Pendidikan**: Evaluasi program, pemilihan perwakilan siswa
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: React 19 + TypeScript
-- **Build Tool**: Vite 8
-- **Styling**: Tailwind CSS 4
-- **State Management**: Custom React Context Store
-- **Routing**: Hash-based routing
-- **Icons & Components**: Custom UI components
+| Kategori | Teknologi |
+|----------|-----------|
+| **Frontend Framework** | React 19.0.0 |
+| **Language** | TypeScript 5.7.0 |
+| **Build Tool** | Vite 8.0.5 |
+| **Styling** | Tailwind CSS 4.0.0 |
+| **State Management** | React Context + Local Storage |
+| **Routing** | Hash-based Routing |
+| **Package Manager** | npm/pnpm |
 
-## 📋 Prerequisites
+## 🚀 Quick Start
 
-Pastikan Anda memiliki software berikut terinstal:
+### Prasyarat
 
-- Node.js (versi 18 atau lebih baru)
-- npm atau yarn atau pnpm
-- Git
+Pastikan sistem Anda telah terinstall:
 
-## 🚀 Installation
+- **Node.js** >= 18.0.0
+- **npm** >= 9.0.0 atau **pnpm** >= 8.0.0
+- **Git** (untuk cloning repository)
 
-1. **Clone repository**
+### Instalasi
+
+1. **Clone Repository**
    ```bash
    git clone <repository-url>
-   cd Forafa-App
+   cd forafa-app
    ```
 
-2. **Install dependencies**
+2. **Install Dependencies**
    ```bash
    npm install
-   # atau
-   yarn install
    # atau
    pnpm install
    ```
 
-3. **Start development server**
+3. **Jalankan Development Server**
    ```bash
    npm run dev
-   # atau
-   yarn dev
    # atau
    pnpm dev
    ```
 
-4. **Open browser**
+4. **Akses Aplikasi**
    
-   Aplikasi akan berjalan di `http://localhost:8443`
+   Buka browser dan akses: `http://localhost:5173`
 
-## 🔧 Available Scripts
+### Akun Demo
 
-- `npm run dev` - Menjalankan development server
-- `npm run build` - Build aplikasi untuk production
-- `npm run preview` - Preview build production secara lokal
-- `npm run format` - Format kode menggunakan oxfmt
+Untuk testing, gunakan akun berikut:
 
-## 👤 Demo Accounts
+| Role | Username | Email | Password |
+|------|----------|--------|----------|
+| **Administrator** | `admin` | `admin@forafa.app` | `admin12345` |
+| **User** | `rina` | `rina@desa-mekar.id` | `rina12345` |
+| **User** | `budi_rw` | `budi@rw05.id` | `budi12345` |
 
-Untuk testing aplikasi, Anda dapat menggunakan akun demo berikut:
-
-**User Account:**
-- Username: `rina`
-- Password: `rina12345`
-
-**Administrator Account:**
-- Username: `admin`  
-- Password: `admin12345`
-
-## 📁 Project Structure
+## 📁 Struktur Proyek
 
 ```
-src/
-├── App.tsx          # Main application component & router
-├── Auth.tsx         # Authentication page (login/register)
-├── Public.tsx       # Public facing pages
-├── Workspace.tsx    # Main workspace/dashboard
-├── store.tsx        # State management
-├── ui.tsx           # Reusable UI components
-├── main.tsx         # Application entry point
-├── index.css        # Global styles
-└── vite-env.d.ts    # Vite type definitions
+forafa-app/
+├── public/                     # Static assets
+├── src/
+│   ├── App.tsx                # Main application component & routing
+│   ├── main.tsx               # Application entry point
+│   ├── index.css              # Global styles & Tailwind imports
+│   ├── Auth.tsx               # Authentication (login/register)
+│   ├── Public.tsx             # Public interaction pages
+│   ├── Workspace.tsx          # Admin dashboard & management
+│   ├── store.tsx              # State management & data models
+│   ├── ui.tsx                 # Reusable UI components
+│   └── vite-env.d.ts          # TypeScript declarations
+├── dist/                      # Production build output
+├── node_modules/              # Dependencies
+├── .gitignore                 # Git ignore rules
+├── index.html                 # HTML template
+├── package.json               # Project configuration & dependencies
+├── tsconfig.json              # TypeScript configuration
+├── vite.config.ts             # Vite build configuration
+└── README.md                  # Documentation (this file)
 ```
 
-## 🎨 Features Overview
+## 🔧 Scripts
 
-### Authentication System
-- Login dan registrasi user
-- Role-based access (User/Administrator)
-- Secure password handling
+| Command | Deskripsi |
+|---------|-----------|
+| `npm run dev` | Menjalankan development server |
+| `npm run build` | Build aplikasi untuk production |
+| `npm run preview` | Preview build production secara lokal |
 
-### Public Interface
-- Akses publik melalui URL hash (`#/p/{slug}`)
-- Interface yang user-friendly untuk participant
+## 🏗️ Build untuk Production
 
-### Workspace Dashboard
-- Panel kontrol untuk mengelola voting, feedback, dan pesan
-- Interface admin untuk monitoring aktivitas
+1. **Build Aplikasi**
+   ```bash
+   npm run build
+   ```
 
-## 🔗 URL Routing
+2. **Preview Build**
+   ```bash
+   npm run preview
+   ```
 
-- `/` - Halaman utama (redirect ke login atau workspace)
-- `#/p/{slug}` - Halaman publik berdasarkan slug
+3. **Deploy**
+   
+   Upload folder `dist/` ke web server atau hosting platform pilihan Anda.
 
-## 🎯 Development
+## 📊 Data Models
 
-Aplikasi ini menggunakan:
-- **React 19** dengan Hooks modern
-- **TypeScript** untuk type safety
-- **Tailwind CSS 4** untuk styling
-- **Vite** untuk fast development experience
-- Custom store pattern untuk state management
-
-## 🚀 Production Build
-
-```bash
-npm run build
+### User
+```typescript
+interface User {
+  id: string
+  username: string
+  email: string
+  role: 'User' | 'Administrator'
+}
 ```
 
-Build akan menghasilkan file optimized di folder `dist/` yang siap untuk deployment.
+### Interaction
+```typescript
+interface Interaction {
+  id: string
+  ownerId: string
+  kind: 'vote' | 'feedback' | 'anon'
+  title: string
+  description: string
+  slug: string
+  active: boolean
+  start: string
+  end: string
+  options: string[]
+  createdAt: string
+}
+```
 
-## 📝 Contributing
+### Response
+```typescript
+interface Response {
+  id: string
+  iid: string
+  name?: string
+  choice?: string
+  message?: string
+  status: 'Baru' | 'Dibaca' | 'Diproses' | 'Selesai'
+  reply?: string
+  shared?: boolean
+  at: string
+}
+```
 
-1. Fork repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
+## 🎨 Styling & Theme
 
-## 📄 License
+Aplikasi menggunakan **Tailwind CSS 4** dengan custom color palette:
 
-This project is licensed under the MIT License.
+```css
+--color-ink: #0d2b2e      /* Text primary */
+--color-mute: #5b7275     /* Text secondary */
+--color-line: #dbe6e4     /* Borders */
+--color-ground: #f3f8f6   /* Background */
+--color-brand: #0f766e    /* Brand color */
+--color-vote: #2563eb     /* Voting theme */
+--color-fb: #d97706       /* Feedback theme */
+--color-anon: #7c3aed     /* Anonymous theme */
+```
 
-## 🤝 Support
+## 🔒 Security Features
 
-Jika Anda memiliki pertanyaan atau memerlukan bantuan:
-- Create an issue di repository ini
-- Contact team development
+- ✅ Input validation untuk email dan username
+- ✅ Password minimum 8 karakter
+- ✅ Role-based access control
+- ✅ XSS protection melalui React
+- ✅ Data persistence dengan localStorage encryption
+
+## 🤝 Contributing
+
+1. Fork repository ini
+2. Buat feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit perubahan (`git commit -m 'Add amazing feature'`)
+4. Push ke branch (`git push origin feature/amazing-feature`)
+5. Buat Pull Request
+
+### Development Guidelines
+
+- Gunakan TypeScript untuk type safety
+- Ikuti konvensi penamaan React components
+- Tulis kode yang clean dan terdokumentasi
+- Test fitur baru sebelum commit
+- Gunakan Tailwind CSS untuk styling
+
+## 📝 License
+
+Distributed under the MIT License. See `LICENSE` file for more information.
+
+## 👥 Team
+
+- **Project Lead**: [Your Name]
+- **Frontend Developer**: [Your Name]  
+- **UI/UX Designer**: [Your Name]
+
+## 📞 Support
+
+Jika Anda mengalami masalah atau memiliki pertanyaan:
+
+- 📧 Email: support@forafa.app
+- 🐛 Issues: [GitHub Issues](https://github.com/yourrepo/forafa-app/issues)
+- 📖 Documentation: [Wiki](https://github.com/yourrepo/forafa-app/wiki)
+
+## 🚀 Roadmap
+
+- [ ] **v0.2.0** - Mobile responsive improvements
+- [ ] **v0.3.0** - Export data functionality  
+- [ ] **v0.4.0** - Email notifications
+- [ ] **v0.5.0** - Multi-language support
+- [ ] **v1.0.0** - Production-ready release
 
 ---
 
-**Participate · Communicate · Analyze**
+<div align="center">
+
+**[⬆ Back to Top](#forafa-app)**
+
+Made with ❤️ using React & TypeScript
+
+</div>

@@ -40,10 +40,14 @@ interface Store {
   users: User[]
   interactions: Interaction[]
   responses: Response[]
-  register: (u: { username: string; email: string; password: string; role: Role }) => string | null
+  register: (u: { username: string; email: string; password: string }) => string | null
   login: (id: string, password: string) => string | null
   logout: () => void
-  addInteraction: (i: Omit<Interaction, 'id' | 'ownerId' | 'slug' | 'createdAt'>) => Interaction
+  adminCreateUser: (u: { username: string; email: string; password: string }) => string | null
+  updateUser: (id: string, patch: { username?: string; email?: string }) => string | null
+  resetUserPassword: (id: string, newPassword: string) => string | null
+  removeUser: (id: string) => void
+  addInteraction: (i: Omit<Interaction, 'id' | 'ownerId' | 'slug' | 'createdAt'>, ownerIdOverride?: string) => Interaction
   updateInteraction: (id: string, patch: Partial<Interaction>) => void
   removeInteraction: (id: string) => void
   submit: (r: Omit<Response, 'id' | 'at' | 'status'>) => void
@@ -61,12 +65,15 @@ const day = (d: number) => new Date(Date.now() + d * 86400_000).toISOString().sl
 const seedUsers: (User & { password: string })[] = [
   { id: 'u1', username: 'admin', email: 'admin@forafa.app', role: 'Administrator', password: 'admin12345' },
   { id: 'u2', username: 'rina', email: 'rina@desa-mekar.id', role: 'User', password: 'rina12345' },
+  { id: 'u3', username: 'budi_rw', email: 'budi@rw05.id', role: 'User', password: 'budi12345' },
 ]
 
 const seedInteractions: Interaction[] = [
   { id: 'i1', ownerId: 'u2', kind: 'vote', title: 'Pilih nama taman baru RW 05', description: 'Warga memilih satu nama untuk taman yang baru diresmikan.', slug: 'taman-rw05', active: true, start: day(-3), end: day(10), options: ['Taman Mekar Asri', 'Taman Bhineka', 'Taman Sudirman Hijau', 'Taman Cahaya'], createdAt: ago(72) },
   { id: 'i2', ownerId: 'u2', kind: 'feedback', title: 'Kritik & Saran layanan posyandu', description: 'Sampaikan masukan agar layanan posyandu semakin nyaman.', slug: 'posyandu', active: true, start: day(-14), end: day(30), options: ['Jadwal', 'Fasilitas', 'Petugas'], createdAt: ago(200) },
   { id: 'i3', ownerId: 'u2', kind: 'anon', title: 'Kotak suara warga', description: 'Tulis apa saja tanpa menampilkan identitas Anda.', slug: 'kotak-suara', active: true, start: day(-30), end: day(60), options: [], createdAt: ago(400) },
+  { id: 'i4', ownerId: 'u3', kind: 'vote', title: 'Pilih ketua RT baru', description: 'Pemilihan ketua RT periode 2026-2028.', slug: 'pilih-ketua-rt', active: true, start: day(-1), end: day(7), options: ['Pak Suryo', 'Bu Ratna', 'Pak Hasan'], createdAt: ago(24) },
+  { id: 'i5', ownerId: 'u3', kind: 'feedback', title: 'Masukan kebersihan lingkungan', description: 'Sampaikan saran untuk program kebersihan RW.', slug: 'kebersihan-rw', active: true, start: day(-5), end: day(25), options: ['Jadwal', 'Peralatan', 'Petugas'], createdAt: ago(120) },
 ]
 
 const names = ['Budi', 'Sari', 'Dewi', 'Agus', 'Maya', 'Hendra', 'Lina', 'Rizal', 'Tono', 'Putri', 'Yoga', 'Nia']
@@ -78,6 +85,10 @@ const seedResponses: Response[] = [
   { id: 'f4', iid: 'i2', name: 'Joko', message: 'Tolong tambah papan informasi jadwal imunisasi.', status: 'Diproses', reply: 'Sedang kami siapkan minggu ini.', at: ago(90) },
   { id: 'a1', iid: 'i3', message: 'Lampu jalan di gang mawar sudah seminggu mati.', status: 'Baru', at: ago(4) },
   { id: 'a2', iid: 'i3', message: 'Iuran kebersihan sebaiknya dilaporkan terbuka tiap bulan.', status: 'Dibaca', at: ago(30) },
+  { id: 'v20', iid: 'i4', name: 'Wati', choice: 'Bu Ratna', status: 'Baru', at: ago(3) },
+  { id: 'v21', iid: 'i4', name: 'Slamet', choice: 'Pak Suryo', status: 'Baru', at: ago(5) },
+  { id: 'v22', iid: 'i4', name: 'Dwi', choice: 'Bu Ratna', status: 'Baru', at: ago(8) },
+  { id: 'fb10', iid: 'i5', name: 'Pak Bambang', message: 'Perlu tambah tempat sampah di depan masjid.', status: 'Baru', at: ago(6) },
 ]
 
 function load<T>(key: string, fallback: T): T {
@@ -107,12 +118,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       users,
       interactions,
       responses,
-      register: ({ username, email, password, role }) => {
+      register: ({ username, email, password }) => {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
         if (!/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
         if (password.length < 8) return 'Password minimal 8 karakter.'
         if (users.some((u) => u.email === email || u.username.toLowerCase() === username.toLowerCase())) return 'Email atau username sudah terdaftar.'
-        const u = { id: uid(), username, email, role, password }
+        const u = { id: uid(), username, email, role: 'User' as Role, password }
         setUsers((p) => [...p, u])
         setSessionId(u.id)
         return null
@@ -124,11 +135,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return null
       },
       logout: () => setSessionId(null),
-      addInteraction: (i) => {
+      adminCreateUser: ({ username, email, password }) => {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
+        if (!/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
+        if (password.length < 8) return 'Password minimal 8 karakter.'
+        if (users.some((u) => u.email === email || u.username.toLowerCase() === username.toLowerCase())) return 'Email atau username sudah terdaftar.'
+        const u = { id: uid(), username, email, role: 'User' as Role, password }
+        setUsers((p) => [...p, u])
+        return null
+      },
+      updateUser: (id, patch) => {
+        const { username, email } = patch
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
+        if (username && !/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
+        if (users.some((u) => u.id !== id && ((email && u.email === email) || (username && u.username.toLowerCase() === username.toLowerCase())))) return 'Email atau username sudah digunakan.'
+        setUsers((p) => p.map((u) => (u.id === id ? { ...u, ...patch } : u)))
+        return null
+      },
+      resetUserPassword: (id, newPassword) => {
+        if (newPassword.length < 8) return 'Password minimal 8 karakter.'
+        setUsers((p) => p.map((u) => (u.id === id ? { ...u, password: newPassword } : u)))
+        return null
+      },
+      removeUser: (id) => {
+        const userInteractionIds = interactions.filter((i) => i.ownerId === id).map((i) => i.id)
+        setUsers((p) => p.filter((u) => u.id !== id))
+        setInteractions((p) => p.filter((i) => i.ownerId !== id))
+        setResponses((p) => p.filter((r) => !userInteractionIds.includes(r.iid)))
+        if (sessionId === id) setSessionId(null)
+      },
+      addInteraction: (i, ownerIdOverride) => {
         const n: Interaction = {
           ...i,
           id: uid(),
-          ownerId: sessionId ?? '',
+          ownerId: ownerIdOverride ?? sessionId ?? '',
           slug: (i.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'link') + '-' + uid().slice(0, 3),
           createdAt: new Date().toISOString(),
         }

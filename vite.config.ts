@@ -1,39 +1,22 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import path from 'node:path'
-
+import { resolve } from 'node:path'
 
 // Vite config — https://vitejs.dev/config/
-export default defineConfig(({ mode }) => {
-  // For cached-preview builds
-  const emitSourcemaps = mode === 'development'
-
-  return {
-    base: '/',
-    build: {
-      sourcemap: emitSourcemaps ? 'inline' : false,
-      minify: !emitSourcemaps,
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
+  resolve: {
+    alias: {
+      '@': resolve(import.meta.dirname, './src'),
     },
-    plugins: [
-      react(),
-      tailwindcss(),
-    ],
-    resolve: {
-      alias: {
-        '@': path.resolve(import.meta.dirname, './src'),
-      },
-    },
-    server: {
-      host: '0.0.0.0',
-      port: 8443,
-      strictPort: true,
-    },
-    preview: {
-      host: '0.0.0.0',
-      port: 8443,
-    },
-  }
+  },
+  server: {
+    port: 5173,
+  },
 })
 
 

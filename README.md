@@ -1,401 +1,117 @@
-# Forafa-App Frontend
+# 🚀 Forafa-App — Fullstack Platform
 
-React frontend application untuk Forafa-App - Platform Partisipasi Publik Digital.
-
-## 📋 Quick Overview
-
-```
-Frontend (You are here)
-├── React 19 + TypeScript
-├── Vite build tool
-├── Tailwind CSS styling
-├── Cloudinary media storage
-└── Local state management (Context API)
-```
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Node.js >= 18.0.0
-- npm >= 9.0.0 or pnpm >= 8.0.0
-
-### Setup
-
-1. **Install Dependencies**
-   ```bash
-   npm install
-   ```
-
-2. **Setup Environment (Optional)**
-   ```bash
-   cp .env.example .env
-   # Edit .env untuk Cloudinary configuration
-   ```
-
-3. **Start Development Server**
-   ```bash
-   npm run dev
-   ```
-
-4. **Open in Browser**
-   ```
-   http://localhost:5173
-   ```
-
-## 📁 Project Structure
-
-```
-src/
-├── pages/                  # Page/Route components
-│   ├── Auth.tsx           # Login & Register
-│   ├── Public.tsx         # Public voting/feedback pages
-│   ├── UserWorkspace.tsx  # User dashboard
-│   └── AdminDashboard.tsx # Admin panel
-│
-├── components/            # Reusable components
-│   ├── ui.tsx            # UI components (buttons, cards, etc)
-│   └── MediaUpload.tsx    # File upload component
-│
-├── services/             # Business logic
-│   ├── store.tsx         # React Context + state management
-│   └── mediaService.ts   # Cloudinary integration
-│
-├── App.tsx               # Main router
-├── Workspace.tsx         # Role-based router
-├── main.tsx              # Entry point
-├── index.css             # Global styles
-└── vite-env.d.ts         # Type declarations
-```
-
-## 🔧 Available Scripts
-
-### Development
-
-```bash
-npm run dev       # Start dev server (http://localhost:5173)
-npm run preview   # Preview production build
-```
-
-### Production
-
-```bash
-npm run build     # Build for production
-npm run build:analyze  # Analyze bundle size (if configured)
-```
-
-### Testing
-
-```bash
-npm run test      # Run tests (if configured)
-npm run test:watch # Watch mode (if configured)
-```
-
-## 🎯 Main Features
-
-### 🗳️ Voting System
-- Create voting interactions
-- Multiple choice voting
-- Real-time result visualization
-- Vote count & percentage display
-
-### 💬 Feedback & Suggestions
-- Structured feedback collection
-- Category/topic organization
-- Status tracking (New → Processed → Closed)
-- Admin reply system
-
-### 🕵️ Anonymous Messages
-- Anonymous submission
-- Identity protection
-- No name/tracking info stored
-- Transparent communication
-
-### 👥 User Management
-- Register & login
-- Profile customization
-- Avatar upload
-- 2 user roles (User & Admin)
-
-### 📊 Analytics Dashboard
-- Total users, interactions, responses count
-- Response status distribution
-- Recent activity timeline
-- User interaction statistics
-
-### 📸 Media Upload
-- Profile avatar upload (200x200px)
-- Interaction banner upload (800x400px)
-- Cloudinary cloud storage (recommended)
-- Base64 local fallback
-- Automatic compression & optimization
-
-## 🔐 Authentication
-
-### Register
-```
-1. Click "Daftar sekarang"
-2. Enter username (3-20 chars)
-3. Enter email (valid format)
-4. Enter password (min 8 chars)
-5. Account created → auto login as User
-```
-
-### Login
-```
-1. Enter username or email
-2. Enter password
-3. Redirected to dashboard (role-based)
-```
-
-### Roles
-- **User**: Create & manage own interactions
-- **Administrator**: View all interactions, manage users
-
-## 📸 Media Storage
-
-### Cloudinary Setup (Recommended)
-
-1. Register at https://cloudinary.com (Free Tier)
-2. Copy Cloud Name from dashboard
-3. Create Upload Preset (Unsigned)
-4. Add to `.env`:
-   ```env
-   VITE_CLOUDINARY_CLOUD_NAME=your_cloud_name
-   VITE_CLOUDINARY_UPLOAD_PRESET=forafa_unsigned
-   ```
-
-**See `../MEDIA_STORAGE_SETUP.md` for detailed instructions**
-
-### Local Fallback
-
-If Cloudinary not configured:
-- Files stored as Base64 in localStorage
-- Max 1MB per file
-- Perfect for development & testing
-
-## 🎨 UI Components
-
-Located in `src/components/ui.tsx`:
-
-| Component | Usage |
-|-----------|-------|
-| `Btn` | Customizable button (primary, ghost, danger) |
-| `Field` | Form field with label |
-| `Card` | Container/card wrapper |
-| `Logo` | App SVG logo |
-| `KindBadge` | Interaction type badge |
-| `StatusPill` | Response status indicator |
-| `Paginated` | Pagination controls |
-| `Bar` | Chart bar visualization |
-| `QR` | QR code generator |
-| `MediaUpload` | File upload with preview |
-
-## 🎨 Styling
-
-- **Framework**: Tailwind CSS 4.0.0
-- **Entry Point**: `src/index.css`
-- **Custom Theme**: CSS variables in index.css
-
-### Color Variables
-```css
---color-ink: #0d2b2e        /* Primary text */
---color-mute: #5b7275       /* Secondary text */
---color-line: #dbe6e4       /* Borders */
---color-ground: #f3f8f6     /* Background */
---color-brand: #0f766e      /* Primary brand */
---color-vote: #2563eb       /* Voting color */
---color-fb: #d97706         /* Feedback color */
---color-anon: #7c3aed       /* Anonymous color */
-```
-
-## 🌐 Routing
-
-Hash-based routing for SPA:
-
-```
-/                 → Auth (if not logged in) or Workspace
-/auth             → Login/Register page
-/#/p/:slug        → Public voting/feedback page
-/#/               → User/Admin workspace
-```
-
-## 💾 State Management
-
-Using React Context API + localStorage:
-
-```typescript
-// Access store in any component
-const { user, interactions, responses, login, logout, ... } = useStore()
-
-// State persisted to localStorage:
-// - fa_users
-// - fa_session
-// - fa_inter
-// - fa_resp
-// - fa_media
-```
-
-## 🔄 Data Flow
-
-```
-User Action
-    ↓
-Component Handler
-    ↓
-Store Action (Context)
-    ↓
-State Update
-    ↓
-localStorage Persistence
-    ↓
-Component Re-render
-```
-
-## 📊 API Integration
-
-Currently using **local state only**. Future backend integration:
-
-```typescript
-// Future endpoints (example)
-POST   /api/auth/register
-POST   /api/auth/login
-GET    /api/interactions
-POST   /api/interactions
-PATCH  /api/interactions/:id
-DELETE /api/interactions/:id
-POST   /api/interactions/:id/responses
-```
-
-## 🔍 Features in Detail
-
-### Search & Filter
-
-- **Keyword Search**: Search by username, email, title, message
-- **Status Filter**: Filter by response status (New, Read, Processing, Closed)
-- **Kind Filter**: Filter by interaction type (Voting, Feedback, Anonymous)
-- **Date Range**: Filter by creation date
-
-### Pagination
-
-- Default 6 items per page
-- Navigation: Previous/Next buttons
-- Current page indicator
-- Handles edge cases (empty, single page)
-
-### Validation
-
-**Client-side:**
-- Email format validation
-- Username pattern (3-20 chars, alphanumeric + underscore)
-- Password minimum 8 characters
-- Required field checking
-- File type validation (images only)
-- File size validation (max 5MB)
-
-**Server-side:**
-- Duplicate username/email check
-- Password length verification
-- Data type validation
-- Business logic validation
-
-### Error Handling
-
-- User-friendly error messages
-- Alert dialogs for critical errors
-- Toast-like notifications
-- Form field error states
-- Graceful fallbacks
-
-## 🚀 Performance Optimization
-
-- Code splitting via Vite
-- Lazy component loading
-- Image optimization via Cloudinary
-- Efficient re-rendering (React.memo)
-- Minimal bundle size (<500KB gzipped)
-- localStorage caching
-
-## 🧪 Demo Accounts
-
-Test different features with these accounts:
-
-| Role | Username | Password |
-|------|----------|----------|
-| Admin | admin | admin12345 |
-| User | rina | rina12345 |
-| User | budi_rw | budi12345 |
-
-## 🐛 Debugging
-
-### Check LocalStorage
-```javascript
-// In browser console
-localStorage.getItem('fa_users')
-localStorage.getItem('fa_session')
-localStorage.getItem('fa_media')
-```
-
-### View Stored Data
-```javascript
-// Pretty print
-console.table(JSON.parse(localStorage.getItem('fa_users')))
-```
-
-### Clear Data
-```javascript
-localStorage.clear()
-location.reload()
-```
-
-## 📱 Browser Support
-
-- Chrome/Edge: ✅ Latest
-- Firefox: ✅ Latest
-- Safari: ✅ Latest
-- Mobile browsers: ✅ Responsive design
-
-## ♿ Accessibility
-
-- Semantic HTML
-- ARIA labels where needed
-- Keyboard navigation support
-- Focus indicators
-- Color contrast compliance
-
-## 🔒 Security Notes
-
-- Passwords validated client & server-side
-- XSS protection via React
-- No sensitive data in localStorage
-- HTTPS recommended for production
-
-## 📚 Additional Resources
-
-- [React Documentation](https://react.dev/)
-- [TypeScript Handbook](https://www.typescriptlang.org/docs/)
-- [Tailwind CSS Docs](https://tailwindcss.com/docs)
-- [Vite Guide](https://vitejs.dev/guide/)
-- [Cloudinary Docs](https://cloudinary.com/documentation/)
-
-## 🤝 Contributing
-
-1. Create feature branch (`git checkout -b feature/name`)
-2. Make changes following code style
-3. Test thoroughly
-4. Commit (`git commit -m 'Add feature'`)
-5. Push & create PR
-
-## 📄 License
-
-MIT License - See LICENSE file
+Platform Partisipasi Publik: Voting, Kritik & Saran, dan Pesan Anonim.
 
 ---
 
-<div align="center">
+## 📁 Struktur Repositori & Direktori Server
 
-**Questions?** Check docs/ or open an issue
+```text
+forafa-app/
+├── server/
+│   ├── src/
+│   │   ├── config/
+│   │   │   ├── config.php            # Konfigurasi global & pemuat .env
+│   │   │   └── database.php          # Koneksi database PDO MySQL (Singleton)
+│   │   ├── controllers/
+│   │   │   ├── AnalyticsController.php   # Statistik agregasi platform & user
+│   │   │   ├── AuthController.php        # Register, Login, Logout, & Me
+│   │   │   ├── InteractionController.php # CRUD Voting, Feedback, & Anon
+│   │   │   ├── PublicController.php      # Portal publik pengunjung
+│   │   │   ├── ResponseController.php    # Manajemen tanggapan & ekspor CSV
+│   │   │   └── UserController.php        # Manajemen akun pengguna (Admin)
+│   │   ├── middlewares/
+│   │   │   ├── AuthMiddleware.php        # Validasi Bearer Token JWT & RBAC
+│   │   │   └── CorsMiddleware.php        # Pengaturan CORS & preflight OPTIONS
+│   │   ├── models/
+│   │   │   ├── Interaction.php           # Logika interaksi & periode aktif
+│   │   │   ├── Response.php              # Logika tanggapan & generator CSV
+│   │   │   └── User.php                  # Logika pengguna & Bcrypt hashing
+│   │   ├── routes/
+│   │   │   ├── Router.php                # Route dispatcher
+│   │   │   └── api.php                   # Pendaftaran seluruh endpoint API
+│   │   ├── utils/
+│   │   │   ├── JWT.php                   # Encoder & Decoder JWT Native HS256
+│   │   │   ├── Response.php              # Helper output JSON & CSV
+│   │   │   └── Slug.php                  # Generator URL slug ramah & unik
+│   │   ├── app.js                        # Node runner bridge
+│   │   └── index.php                     # Entry point front controller
+│   ├── tests/                            # Direktori automated testing
+│   ├── .env.example                      # Template variabel lingkungan
+│   ├── .env                              # File konfigurasi aktif lokal
+│   ├── .htaccess                         # Konfigurasi rewrite Apache
+│   ├── database.sql                      # Skema DDL & seed data bawaan
+│   ├── index.php                         # Root forwarder
+│   ├── package.json                      # Konfigurasi server runner
+│   ├── router.php                        # Router untuk PHP CLI built-in server
+│   ├── seed.php                          # Script seeder data awal
+│   └── setup.php                         # Script inisialisasi database otomatis
+├── docs/
+│   ├── api_specifications.md             # Dokumen spesifikasi teknis API lengkap
+│   ├── database_schema.md                # Data Dictionary & kamus tabel
+│   └── database_schema.sql               # Baseline DDL Schema script
+└── README.md                             # Panduan ini
+```
 
-Made with ❤️ using React & TypeScript
+---
 
-</div>
+## ⚙️ Persyaratan Sistem (*Prerequisites*)
+
+* **PHP 8.1 / 8.2 / 8.3+** (dengan ekstensi `pdo_mysql`, `openssl`, `json`, `mbstring`)
+* **MySQL 8.0+** atau **MariaDB 10.4+** (atau Cloud Database seperti Aiven, Clever Cloud, Supabase)
+* Direkomendasikan menggunakan **Laragon** atau **XAMPP** di Windows.
+
+---
+
+## 🛠️ Panduan Menjalankan Backend (*Quickstart*)
+
+### 1. Inisialisasi Database
+Pastikan MySQL sudah berjalan (misal: tombol **Start All** di Laragon), lalu jalankan:
+```bash
+cd server
+php setup.php
+```
+Script otomatis membuat database `forafa_db`, tabel `users`, `interactions`, dan `responses`, serta mengisi data awal akun default:
+* **Administrator**: `admin` / `admin12345` (`admin@forafa.app`)
+* **User 1**: `rina` / `rina12345` (`rina@desa-mekar.id`)
+* **User 2**: `budi_rw` / `budi12345` (`budi@rw05.id`)
+
+### 2. Konfigurasi Variabel Lingkungan (`.env`)
+Salin template konfigurasi:
+```bash
+cp .env.example .env
+```
+Default konfigurasi lokal:
+```env
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=forafa_db
+DB_USERNAME=root
+DB_PASSWORD=
+
+JWT_SECRET=forafa_secret_key_native_php_2026_change_in_production
+JWT_EXPIRE_MINUTES=1440
+API_PREFIX=/api/v1
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000
+```
+
+### 3. Menjalankan Server Backend
+Jalankan server pengembangan lokal menggunakan salah satu cara berikut:
+
+#### Cara A: PHP CLI Built-in Server (Paling Cepat)
+```bash
+cd server
+php -S 0.0.0.0:8000 router.php
+```
+
+#### Cara B: Menggunakan npm runner
+```bash
+cd server
+npm run dev:php
+# Atau via Node bridge:
+node src/app.js
+```
+
+API sekarang aktif di:
+👉 **`http://localhost:8000/api/v1`**  
+👉 Health Check: **`http://localhost:8000/health`**

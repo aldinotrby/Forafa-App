@@ -231,9 +231,9 @@ Distributed under the MIT License. See `LICENSE` file for more information.
 
 ## 👥 Team
 
-- **Project Lead**: [Your Name]
-- **Frontend Developer**: [Your Name]  
-- **UI/UX Designer**: [Your Name]
+- **Project Lead**: Forafa-App
+- **Frontend Developer**: aldinodn735@gmail.com (Aldino)
+- **UI/UX Designer**: aldinodn735@gmail.com (Aldino)
 
 ## 📞 Support
 

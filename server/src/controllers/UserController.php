@@ -11,9 +11,7 @@ require_once __DIR__ . '/../middlewares/AuthMiddleware.php';
 require_once __DIR__ . '/../config/database.php';
 
 class UserController {
-    /**
-     * GET /users
-     */
+
     public static function list(): void {
         AuthMiddleware::requireAdmin();
 
@@ -51,9 +49,7 @@ class UserController {
         ApiResponse::json($users, 200);
     }
 
-    /**
-     * POST /users
-     */
+
     public static function create(): void {
         AuthMiddleware::requireAdmin();
 

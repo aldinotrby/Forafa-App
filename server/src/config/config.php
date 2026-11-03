@@ -83,6 +83,32 @@ return [
         'secret' => env('JWT_SECRET', 'forafa_secret_key_native_php_2026_change_in_production'),
         'expire_minutes' => (int) env('JWT_EXPIRE_MINUTES', 1440),
     ],
+    'session' => [
+        'lifetime_minutes' => (int)env('SESSION_LIFETIME_MINUTES', 1440),
+        'idle_minutes' => (int)env('SESSION_IDLE_MINUTES', 120),
+        'regenerate_on_login' => (bool)env('SESSION_REGENERATE_ON_LOGIN', true),
+        'cookie_name' => env('SESSION_COOKIE_NAME', 'forafa_session'),
+    ],
+    'google_oauth' => [
+        'client_id' => env('GOOGLE_CLIENT_ID', 'forafa-google-client-id.apps.googleusercontent.com'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET', ''),
+    ],
+    'whatsapp_otp' => [
+        'provider' => env('WHATSAPP_PROVIDER', 'mock'), // 'mock', 'fonnte', 'wablas', 'twilio'
+        'api_key' => env('WHATSAPP_API_KEY', ''),
+        'otp_expire_minutes' => (int)env('OTP_EXPIRE_MINUTES', 5),
+        'max_attempts' => (int)env('OTP_MAX_ATTEMPTS', 3),
+    ],
+    'rate_limit' => [
+        'enabled' => (bool)env('RATE_LIMIT_ENABLED', true),
+        'api_max_requests' => (int)env('RATE_LIMIT_API_MAX', 60),       // Max 60 req/min for general API
+        'submit_max_requests' => (int)env('RATE_LIMIT_SUBMIT_MAX', 5),  // Max 5 submit req/min per IP
+        'otp_max_requests' => (int)env('RATE_LIMIT_OTP_MAX', 3),        // Max 3 OTP sends per 10 min
+    ],
+    'anti_spam' => [
+        'honeypot_enabled' => (bool)env('SPAM_HONEYPOT_ENABLED', true),
+        'min_submit_seconds' => (int)env('SPAM_MIN_SUBMIT_SECONDS', 1),
+    ],
     'cors' => [
         'origins' => array_filter(array_map('trim', explode(',', env('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000')))),
     ],

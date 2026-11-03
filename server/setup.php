@@ -52,8 +52,12 @@ try {
     output("--------------------------------------------------", $isCli);
     output("Tabel yang dibuat:", $isCli);
     output(" - users", $isCli);
+    output(" - sessions", $isCli);
     output(" - interactions", $isCli);
+    output(" - voting_questions", $isCli);
     output(" - responses", $isCli);
+    output(" - response_identities", $isCli);
+    output(" - voting_answers", $isCli);
     output("", $isCli);
     output("Akun bawaan yang tersedia:", $isCli);
     output(" - Administrator : admin / admin12345 (admin@forafa.app)", $isCli);

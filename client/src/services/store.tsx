@@ -153,6 +153,66 @@ const seedResponses: Response[] = [
   { id: 'fb10', iid: 'i5', name: 'Pak Bambang', message: 'Perlu tambah tempat sampah di depan masjid.', status: 'Baru', at: ago(6) },
 ]
 
+const API_BASE = '/api/v1'
+
+const getAuthHeaders = (): Record<string, string> => {
+  const token = localStorage.getItem('fa_token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+const apiCall = async (path: string, options: RequestInit = {}) => {
+  try {
+    return await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+        ...(options.headers || {}),
+      },
+    })
+  } catch {
+    return null
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const normalizeInteraction = (raw: any): Interaction => ({
+  id: String(raw.id),
+  ownerId: String(raw.ownerId || raw.owner_id || ''),
+  kind: raw.kind as Kind,
+  title: String(raw.title || ''),
+  description: String(raw.description || ''),
+  slug: String(raw.slug || ''),
+  active: Boolean(raw.active),
+  start: String(raw.start || ''),
+  end: String(raw.end || ''),
+  options: Array.isArray(raw.options) ? raw.options : typeof raw.options === 'string' ? JSON.parse(raw.options) : [],
+  createdAt: String(raw.createdAt || raw.created_at || new Date().toISOString()),
+  banner: raw.banner,
+})
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const normalizeResponse = (raw: any): Response => ({
+  id: String(raw.id),
+  iid: String(raw.iid || raw.interaction_id || ''),
+  name: raw.name || undefined,
+  choice: raw.choice || undefined,
+  message: raw.message || undefined,
+  status: (raw.status as Status) || 'Baru',
+  reply: raw.reply || undefined,
+  shared: Boolean(raw.shared),
+  at: String(raw.at || raw.created_at || new Date().toISOString()),
+})
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const normalizeUser = (raw: any): User => ({
+  id: String(raw.id),
+  username: String(raw.username || ''),
+  email: String(raw.email || ''),
+  role: (raw.role as Role) || 'User',
+  avatar: raw.avatar,
+})
+
 function load<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key)
@@ -163,7 +223,7 @@ function load<T>(key: string, fallback: T): T {
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [users, setUsers] = useState(() => load('fa_users', seedUsers))
+  const [users, setUsers] = useState<User[]>(() => load('fa_users', seedUsers))
   const [sessionId, setSessionId] = useState<string | null>(() => load('fa_session', null))
   const [session, setSession] = useState<SessionInfo | null>(() => load('fa_session_info', null))
   const [sessionHistory, setSessionHistory] = useState<SessionHistory>(() => load('fa_session_history', { lastTabClosedAt: null, lastLogoutAt: null }))
@@ -324,6 +384,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (users.some((u) => u.email === email || u.username.toLowerCase() === username.toLowerCase())) return 'Email atau username sudah terdaftar.'
         const u = { id: uid(), username, email, role: 'User' as Role, password, provider: 'password' as AuthProvider }
         setUsers((p) => [...p, u])
+
+        // Asynchronously persist in backend
+        apiCall('/users', {
+          method: 'POST',
+          body: JSON.stringify({ username, email, password, role: 'User' }),
+        })
+
         return null
       },
       updateUser: (id, patch) => {
@@ -332,11 +399,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (username && !/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
         if (users.some((u) => u.id !== id && ((email && u.email === email) || (username && u.username.toLowerCase() === username.toLowerCase())))) return 'Email atau username sudah digunakan.'
         setUsers((p) => p.map((u) => (u.id === id ? { ...u, ...patch } : u)))
+
+        // Asynchronously update in backend
+        apiCall(`/users/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(patch),
+        })
+
         return null
       },
       resetUserPassword: (id, newPassword) => {
         if (newPassword.length < 8) return 'Password minimal 8 karakter.'
         setUsers((p) => p.map((u) => (u.id === id ? { ...u, password: newPassword } : u)))
+
+        // Asynchronously reset password in backend
+        apiCall(`/users/${id}/reset-password`, {
+          method: 'POST',
+          body: JSON.stringify({ new_password: newPassword }),
+        })
+
         return null
       },
       removeUser: (id) => {
@@ -345,6 +426,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setInteractions((p) => p.filter((i) => i.ownerId !== id))
         setResponses((p) => p.filter((r) => !userInteractionIds.includes(r.iid)))
         if (sessionId === id) setSessionId(null)
+
+        // Asynchronously delete in backend
+        apiCall(`/users/${id}`, { method: 'DELETE' })
       },
       addInteraction: (i, ownerIdOverride) => {
         const n: Interaction = {
@@ -355,16 +439,72 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           createdAt: new Date().toISOString(),
         }
         setInteractions((p) => [n, ...p])
+
+        // Asynchronously persist in backend
+        apiCall('/interactions', {
+          method: 'POST',
+          body: JSON.stringify({
+            kind: n.kind,
+            title: n.title,
+            description: n.description,
+            slug: n.slug,
+            start: n.start,
+            end: n.end,
+            options: n.options,
+            active: n.active,
+          }),
+        })
+
         return n
       },
-      updateInteraction: (id, patch) => setInteractions((p) => p.map((x) => (x.id === id ? { ...x, ...patch } : x))),
+      updateInteraction: (id, patch) => {
+        setInteractions((p) => p.map((x) => (x.id === id ? { ...x, ...patch } : x)))
+
+        // Asynchronously update in backend
+        apiCall(`/interactions/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(patch),
+        })
+      },
       removeInteraction: (id) => {
         setInteractions((p) => p.filter((x) => x.id !== id))
         setResponses((p) => p.filter((x) => x.iid !== id))
+
+        // Asynchronously delete in backend
+        apiCall(`/interactions/${id}`, { method: 'DELETE' })
       },
-      submit: (r) => setResponses((p) => [{ ...r, id: uid(), status: 'Baru', at: new Date().toISOString() }, ...p]),
-      patchResponse: (id, patch) => setResponses((p) => p.map((x) => (x.id === id ? { ...x, ...patch } : x))),
-      removeResponse: (id) => setResponses((p) => p.filter((x) => x.id !== id)),
+      submit: (r) => {
+        const n: Response = { ...r, id: uid(), status: 'Baru', at: new Date().toISOString() }
+        setResponses((p) => [n, ...p])
+
+        // Asynchronously submit through backend public portal
+        const targetInter = interactions.find((it) => it.id === r.iid)
+        if (targetInter?.slug) {
+          apiCall(`/public/${targetInter.slug}/submit`, {
+            method: 'POST',
+            body: JSON.stringify({
+              name: r.name,
+              choice: r.choice,
+              message: r.message,
+            }),
+          })
+        }
+      },
+      patchResponse: (id, patch) => {
+        setResponses((p) => p.map((x) => (x.id === id ? { ...x, ...patch } : x)))
+
+        // Asynchronously update in backend
+        apiCall(`/responses/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(patch),
+        })
+      },
+      removeResponse: (id) => {
+        setResponses((p) => p.filter((x) => x.id !== id))
+
+        // Asynchronously delete in backend
+        apiCall(`/responses/${id}`, { method: 'DELETE' })
+      },
     }
   }, [users, sessionId, interactions, responses, session, presence, sessionHistory])
 

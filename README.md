@@ -1,430 +1,103 @@
-# 🌐 Forafa-App — Fullstack Platform Partisipasi Publik Digital
+# Forafa-App
 
-Aplikasi fullstack terintegrasi (**React Frontend** + **PHP Native Backend API** + **MySQL**) untuk platform partisipasi publik modern: Voting, Kritik & Saran, dan Pesan Anonim.
-
-## 📋 System Architecture
-
-```
-Forafa-App/
-├── client/                     # Frontend Application
-│   ├── React 19 + TypeScript 5.7
-│   ├── Vite build tool (Reverse Proxy -> localhost:8000)
-│   ├── Tailwind CSS 4.0 styling
-│   └── Context API Store (REST API integration + Local fallback)
-│
-├── server/                     # Backend API Service
-│   ├── PHP Native (PHP 8.2+) RESTful API
-│   ├── Front Controller (router.php -> src/index.php)
-│   ├── JWT Stateless Authentication
-│   └── PDO MySQL Database Driver
-│
-├── .github/                    # DevOps & Quality Assurance
-│   ├── workflows/ci.yml       # Automated CI (Build, Lint, DB Migration, Contract Test)
-│   ├── workflows/cd.yml       # Production Release & Deployment Packaging
-│   ├── pull_request_template.md
-│   └── ISSUE_TEMPLATE/        # Bug report & Feature request templates
-│
-└── docs/                       # Official Documentation
-    ├── api_specification.md   # Master REST API Contract & Integration Guide
-    ├── architecture_diagram.png
-    └── database_schema.png
-```
-
-## 🚀 Getting Started: Menjalankan Bersama (Frontend & Backend)
-
-### Prerequisites 
-
-- Node.js >= 18.0.0 
-- PHP >= 8.1.0
-- MySQL Server (Laragon, XAMPP, Docker, atau MySQL Standalone di port 3306)
-
-### 1. Inisialisasi Database (Opsional jika baru pertama kali)
-```bash
-cd server
-php setup.php
-cd ..
-```
-
-### 2. Jalankan Backend API Server (Port 8000)
-Buka Terminal 1:
-```bash
-cd server
-php -S 127.0.0.1:8000 router.php
-# API aktif di http://localhost:8000/api/v1
-```
-
-### 3. Jalankan Frontend Vite Dev Server (Port 5173)
-Buka Terminal 2:
-```bash
-cd client
-npm install
-npm run dev
-# Web aktif di http://localhost:5173
-```
-
-> **Catatan Integrasi:** Vite secara otomatis mem-proxy semua panggilan API dari `/api` ke `http://localhost:8000` tanpa konfigurasi tambahan atau isu CORS.
-
-## 📁 Project Structure
-
-```
-src/
-├── pages/                  # Page/Route components
-│   ├── Auth.tsx           # Login & Register
-│   ├── Public.tsx         # Public voting/feedback pages
-│   ├── UserWorkspace.tsx  # User dashboard
-│   └── AdminDashboard.tsx # Admin panel
-│
-├── components/            # Reusable components
-│   ├── ui.tsx            # UI components (buttons, cards, etc)
-│   └── MediaUpload.tsx    # File upload component
-│
-├── services/             # Business logic
-│   ├── store.tsx         # React Context + state management
-│   └── mediaService.ts   # Cloudinary integration
-│
-├── App.tsx               # Main router
-├── Workspace.tsx         # Role-based router
-├── main.tsx              # Entry point
-├── index.css             # Global styles
-└── vite-env.d.ts         # Type declarations
-```
-
-## 🔧 Available Scripts
-
-### Development
-
-```bash
-npm run dev       # Start dev server (http://localhost:5173)
-npm run preview   # Preview production build
-```
-
-### Production
-
-```bash
-npm run build     # Build for production
-npm run build:analyze  # Analyze bundle size (if configured)
-```
-
-### Testing
-
-```bash
-npm run test      # Run tests (if configured)
-npm run test:watch # Watch mode (if configured)
-```
-
-## 🎯 Main Features
-
-### 🗳️ Voting System
-- Create voting interactions
-- Multiple choice voting
-- Real-time result visualization
-- Vote count & percentage display
-
-### 💬 Feedback & Suggestions
-- Structured feedback collection
-- Category/topic organization
-- Status tracking (New → Processed → Closed)
-- Admin reply system
-
-### 🕵️ Anonymous Messages
-- Anonymous submission
-- Identity protection
-- No name/tracking info stored
-- Transparent communication
-
-### 👥 User Management
-- Register & login
-- Profile customization
-- Avatar upload
-- 2 user roles (User & Admin)
-
-### 📊 Analytics Dashboard
-- Total users, interactions, responses count
-- Response status distribution
-- Recent activity timeline
-- User interaction statistics
-
-### 📸 Media Upload
-- Profile avatar upload (200x200px)
-- Interaction banner upload (800x400px)
-- Cloudinary cloud storage (recommended)
-- Base64 local fallback
-- Automatic compression & optimization
-
-## 🔐 Authentication
-
-### Register
-```
-1. Click "Daftar sekarang"
-2. Enter username (3-20 chars)
-3. Enter email (valid format)
-4. Enter password (min 8 chars)
-5. Account created → auto login as User
-```
-
-### Login
-```
-1. Enter username or email
-2. Enter password
-3. Redirected to dashboard (role-based)
-```
-
-### Roles
-- **User**: Create & manage own interactions
-- **Administrator**: View all interactions, manage users
-
-## 📸 Media Storage
-
-### Cloudinary Setup (Recommended)
-
-1. Register at https://cloudinary.com (Free Tier)
-2. Copy Cloud Name from dashboard
-3. Create Upload Preset (Unsigned)
-4. Add to `.env`:
-   ```env
-   VITE_CLOUDINARY_CLOUD_NAME=your_cloud_name
-   VITE_CLOUDINARY_UPLOAD_PRESET=forafa_unsigned
-   ```
-
-**See `../MEDIA_STORAGE_SETUP.md` for detailed instructions**
-
-### Local Fallback
-
-If Cloudinary not configured:
-- Files stored as Base64 in localStorage
-- Max 1MB per file
-- Perfect for development & testing
-
-## 🎨 UI Components
-
-Located in `src/components/ui.tsx`:
-
-| Component | Usage |
-|-----------|-------|
-| `Btn` | Customizable button (primary, ghost, danger) |
-| `Field` | Form field with label |
-| `Card` | Container/card wrapper |
-| `Logo` | App SVG logo |
-| `KindBadge` | Interaction type badge |
-| `StatusPill` | Response status indicator |
-| `Paginated` | Pagination controls |
-| `Bar` | Chart bar visualization |
-| `QR` | QR code generator |
-| `MediaUpload` | File upload with preview |
-
-## 🎨 Styling
-
-- **Framework**: Tailwind CSS 4.0.0
-- **Entry Point**: `src/index.css`
-- **Custom Theme**: CSS variables in index.css
-
-### Color Variables
-```css
---color-ink: #0d2b2e        /* Primary text */
---color-mute: #5b7275       /* Secondary text */
---color-line: #dbe6e4       /* Borders */
---color-ground: #f3f8f6     /* Background */
---color-brand: #0f766e      /* Primary brand */
---color-vote: #2563eb       /* Voting color */
---color-fb: #d97706         /* Feedback color */
---color-anon: #7c3aed       /* Anonymous color */
-```
-
-## 🌐 Routing
-
-Hash-based routing for SPA:
-
-```
-/                 → Auth (if not logged in) or Workspace
-/auth             → Login/Register page
-/#/p/:slug        → Public voting/feedback page
-/#/               → User/Admin workspace
-```
-
-## 💾 State Management
-
-Using React Context API + localStorage:
-
-```typescript
-// Access store in any component
-const { user, interactions, responses, login, logout, ... } = useStore()
-
-// State persisted to localStorage:
-// - fa_users
-// - fa_session
-// - fa_inter
-// - fa_resp
-// - fa_media
-```
-
-## 🔄 Data Flow
-
-```
-User Action
-    ↓
-Component Handler
-    ↓
-Store Action (Context)
-    ↓
-State Update
-    ↓
-localStorage Persistence
-    ↓
-Component Re-render
-```
-
-## 📊 API Integration & Contract
-
-Frontend dan Backend telah terintegrasi penuh sesuai dengan dokumen [docs/api_specification.md](file:///c:/Users/Hype/Documents/devops/Forafa-App/docs/api_specification.md).
-
-```typescript
-// Active Endpoints (Terkoneksi via Vite Reverse Proxy & REST API)
-POST   /api/v1/auth/register          # Registrasi user baru
-POST   /api/v1/auth/login             # Autentikasi user & penerbitan Bearer token
-POST   /api/v1/auth/logout            # Sesi logout
-GET    /api/v1/auth/me                # Profil pengguna aktif
-GET    /api/v1/interactions          # Daftar interaksi
-POST   /api/v1/interactions          # Buat interaksi baru
-PATCH  /api/v1/interactions/:id      # Perbarui formulir interaksi
-DELETE /api/v1/interactions/:id      # Hapus formulir interaksi
-GET    /api/v1/responses             # Daftar tanggapan
-PATCH  /api/v1/responses/:id         # Perbarui status tanggapan / balas
-DELETE /api/v1/responses/:id         # Hapus tanggapan
-GET    /api/v1/public/:slug          # Akses portal pengunjung via slug
-POST   /api/v1/public/:slug/submit   # Submit suara / masukan / anonim
-GET    /api/v1/users                 # Manajemen user (Admin)
-GET    /api/v1/analytics/overview    # Metrik & statistik platform
-```
-
-## 🔍 Features in Detail
-
-### Search & Filter
-
-- **Keyword Search**: Search by username, email, title, message
-- **Status Filter**: Filter by response status (New, Read, Processing, Closed)
-- **Kind Filter**: Filter by interaction type (Voting, Feedback, Anonymous)
-- **Date Range**: Filter by creation date
-
-### Pagination
-
-- Default 6 items per page
-- Navigation: Previous/Next buttons
-- Current page indicator
-- Handles edge cases (empty, single page)
-
-### Validation
-
-**Client-side:**
-- Email format validation
-- Username pattern (3-20 chars, alphanumeric + underscore)
-- Password minimum 8 characters
-- Required field checking
-- File type validation (images only)
-- File size validation (max 5MB)
-
-**Server-side:**
-- Duplicate username/email check
-- Password length verification
-- Data type validation
-- Business logic validation
-
-### Error Handling
-
-- User-friendly error messages
-- Alert dialogs for critical errors
-- Toast-like notifications
-- Form field error states
-- Graceful fallbacks
-
-## 🚀 Performance Optimization
-
-- Code splitting via Vite
-- Lazy component loading
-- Image optimization via Cloudinary
-- Efficient re-rendering (React.memo)
-- Minimal bundle size (<500KB gzipped)
-- localStorage caching
-
-## 🧪 Demo Accounts
-
-Test different features with these accounts:
-
-| Role | Username | Password |
-|------|----------|----------|
-| Admin | admin | admin12345 |
-| User | rina | rina12345 |
-| User | budi_rw | budi12345 |
-
-## 🐛 Debugging
-
-### Check LocalStorage
-```javascript
-// In browser console
-localStorage.getItem('fa_users')
-localStorage.getItem('fa_session')
-localStorage.getItem('fa_media')
-```
-
-### View Stored Data
-```javascript
-// Pretty print
-console.table(JSON.parse(localStorage.getItem('fa_users')))
-```
-
-### Clear Data
-```javascript
-localStorage.clear()
-location.reload()
-```
-
-## 📱 Browser Support
-
-- Chrome/Edge: ✅ Latest
-- Firefox: ✅ Latest
-- Safari: ✅ Latest
-- Mobile browsers: ✅ Responsive design
-
-## ♿ Accessibility
-
-- Semantic HTML
-- ARIA labels where needed
-- Keyboard navigation support
-- Focus indicators
-- Color contrast compliance
-
-## 🔒 Security Notes
-
-- Passwords validated client & server-side
-- XSS protection via React
-- No sensitive data in localStorage
-- HTTPS recommended for production
-
-## 📚 Additional Resources
-
-- [React Documentation](https://react.dev/)
-- [TypeScript Handbook](https://www.typescriptlang.org/docs/)
-- [Tailwind CSS Docs](https://tailwindcss.com/docs)
-- [Vite Guide](https://vitejs.dev/guide/)
-- [Cloudinary Docs](https://cloudinary.com/documentation/)
-
-## 🤝 Contributing
-
-1. Create feature branch (`git checkout -b feature/name`)
-2. Make changes following code style
-3. Test thoroughly
-4. Commit (`git commit -m 'Add feature'`)
-5. Push & create PR
-
-## 📄 License
-
-MIT License - See LICENSE file
+Panduan lengkap dan praktis untuk mengoperasikan serta menjalankan aplikasi **Forafa-App** (Frontend, Backend, dan Database MySQL) secara bersamaan di lingkungan lokal (*development*).
 
 ---
 
-<div align="center">
+## 📋 Prasyarat Sistem (*Prerequisites*)
 
-**Questions?** Check docs/ or open an issue
+Pastikan lingkungan lokal Anda telah terpasang dependensi berikut:
 
-Made with ❤️ using React & TypeScript
+1. **Node.js**: Versi `>= 18.0.0` (termasuk `npm`).
+2. **PHP**: Versi `>= 8.1.0` (dengan ekstensi `pdo_mysql`, `mbstring`, `json`, dan `curl` aktif).
+3. **MySQL Server**: MySQL 8.0 atau MariaDB (dapat dijalankan melalui **Laragon**, **XAMPP**, **Docker**, atau layanan sistem bawaan). Pastikan layanan MySQL aktif pada port default `3306`.
 
-</div>
+---
+
+## 🗄️ Langkah 1: Inisialisasi & Migrasi Database MySQL
+
+Sebelum menjalankan server untuk pertama kali, lakukan pembuatan database `forafa_db` dan pengisian tabel bawaan:
+
+1. Buka terminal lalu masuk ke folder `server`:
+   ```powershell
+   cd server
+   ```
+2. Jalankan skrip setup database:
+   ```powershell
+   php setup.php
+   ```
+   > **Catatan:** Skrip ini secara otomatis membuat database `forafa_db`, tabel-tabel (`users`, `interactions`, `responses`), serta mengisi data awal (*seed data*).
+
+---
+
+## 🚀 Langkah 2: Menjalankan Backend & Frontend
+
+Aplikasi memerlukan dua proses server yang berjalan secara berdampingan.
+
+### Opsi A: Menggunakan 2 Terminal Terpisah (Direkomendasikan)
+
+#### **Terminal 1: Jalankan Server Backend API (Port 8000)**
+```powershell
+cd server
+php -S 127.0.0.1:8000 router.php
+```
+*Atau menggunakan runner Node:*
+```powershell
+npm start
+```
+> ✅ Server backend aktif di: **`http://localhost:8000/api/v1`**
+
+---
+
+#### **Terminal 2: Jalankan Server Frontend Vite (Port 5173)**
+```powershell
+cd client
+npm install      # Jalankan jika dependensi belum terpasang
+npm run dev
+```
+> ✅ Aplikasi frontend aktif di: **`http://localhost:5173`**
+
+---
+
+### Opsi B: Menjalankan Sekaligus via PowerShell (Satu Perintah)
+
+Jika Anda ingin membuka kedua server secara langsung di jendela PowerShell terpisah:
+
+```powershell
+# Jalankan dari root direktori proyek Forafa-App:
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd server; php -S 127.0.0.1:8000 router.php"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd client; npm run dev"
+```
+
+---
+
+## 🌐 Akses Aplikasi & Akun Demo Pengujian
+
+Akses aplikasi melalui peramban web di alamat: **[http://localhost:5173](http://localhost:5173)**
+
+Gunakan akun demo berikut untuk menguji berbagai peran dan fitur aplikasi:
+
+| Peran (*Role*) | Username / Email | Password | Hak Akses Fitur |
+| :--- | :--- | :--- | :--- |
+| **Administrator** | `admin` *(atau `admin@forafa.app`)* | `admin12345` | Akses panel admin, kelola semua user, lihat statistik overview, dan rekap semua interaksi. |
+| **Pengguna 1** | `rina` *(atau `rina@desa-mekar.id`)* | `rina12345` | Dashboard user, membuat voting/feedback/pesan anonim, serta melihat tanggapan masuk. |
+| **Pengguna 2** | `budi_rw` *(atau `budi@rw05.id`)* | `budi12345` | Dashboard user khusus area RW 05. |
+| **Pengunjung (Publik)** | Tanpa Login | *-* | Akses tautan publik (contoh: `http://localhost:5173/#/p/taman-rw05`) untuk mengirim suara atau masukan. |
+
+---
+
+## 🔍 Verifikasi Integrasi Server
+
+Untuk memastikan seluruh layanan terhubung dengan benar tanpa masalah CORS atau jaringan:
+
+1. **Uji Direct Health Check API Backend**:
+   ```bash
+   curl.exe http://localhost:8000/api/v1
+   ```
+   *Respon yang diharapkan:* `{"status":"ok","service":"Forafa-App Backend API", ...}`
+
+2. **Uji Reverse Proxy Frontend**:
+   ```bash
+   curl.exe http://localhost:5173/api/v1
+   ```
+   *Respon yang diharapkan:* Harus sama persis dengan poin nomor 1. Hal ini menandakan bahwa Vite dev server berhasil meneruskan permintaan API ke backend tanpa kendala CORS.

@@ -55,10 +55,12 @@ src/
 │
 ├── components/            # Reusable components
 │   ├── ui.tsx            # UI components (buttons, cards, etc)
-│   └── MediaUpload.tsx    # File upload component
+│   ├── MediaUpload.tsx    # File upload component
+│   └── SessionStatus.tsx  # Login status & session info (panel + pill)
 │
 ├── services/             # Business logic
-│   ├── store.tsx         # React Context + state management
+│   ├── store.tsx         # React Context + state management (auth & session)
+│   ├── googleAuth.ts     # Google Sign-In (Google Identity Services)
 │   └── mediaService.ts   # Cloudinary integration
 │
 ├── App.tsx               # Main router
@@ -148,6 +150,48 @@ npm run test:watch # Watch mode (if configured)
 3. Redirected to dashboard (role-based)
 ```
 
+### Login dengan Google
+```
+1. Click "Lanjutkan dengan Google" (tombol resmi Google Identity Services)
+2. Choose a Google account — ID token (JWT) dikembalikan Google ke browser
+3. Klaim token divalidasi di client: issuer Google, masa berlaku,
+   dan audience == VITE_GOOGLE_CLIENT_ID
+4. Akun dengan email yang sama ditautkan ke Google; email baru otomatis
+   dibuatkan akun User (username diturunkan dari alamat email)
+```
+
+Setup: buat OAuth 2.0 Client ID (Web) di Google Cloud Console, daftarkan
+origin aplikasi (mis. `http://localhost:5173`) sebagai Authorized JavaScript
+origin, lalu isi `VITE_GOOGLE_CLIENT_ID` di `.env` (lihat `client/.env.example`).
+Tanpa variabel itu, tombol Google menampilkan petunjuk konfigurasi.
+
+> Keamanan: validasi di browser ini untuk frontend standalone. Untuk
+> production, ID token wajib diverifikasi ulang di server (signature +
+> audience) sebelum sesi dibuat.
+
+### Session & Kondisi Akun
+
+- **Persistensi sesi** — sesi tersimpan di localStorage (`fa_session` +
+  `fa_session_info`: cara login, waktu login, aktivitas terakhir, waktu tab
+  dibuka). Menutup tab/browser **tidak** mengakhiri sesi; saat tab dibuka
+  lagi sesi dipulihkan dan ditandai "Sesi dipulihkan", lengkap dengan waktu
+  tab sebelumnya ditutup (`fa_session_history`).
+- **Kondisi saat tab dibuka/ditutup** — provider mendengarkan
+  `visibilitychange`, `focus`/`blur` (presence: Online / Tab tidak aktif),
+  dan `pagehide`/`beforeunload` (mencatat waktu tab ditutup). Perubahan
+  `fa_session` juga disinkronkan antar-tab lewat event `storage`: logout di
+  satu tab mengeluarkan semua tab.
+- **Status login pengguna** — komponen `SessionStatus` menampilkan status
+  login (Masuk/Belum masuk), identitas, role, cara login (Password/Google),
+  presence, waktu login & aktivitas terakhir. Tampil sebagai panel di
+  sidebar User Workspace & Admin Panel, sebagai pill di header dashboard,
+  dan sebagai ringkasan di halaman login (termasuk logout terakhir dan
+  waktu tab terakhir ditutup).
+- **Logout** — tombol "Keluar" tersedia di sidebar User Workspace dan
+  Admin Panel (desktop & mobile). Logout menghapus sesi dan info sesinya,
+  mencatat waktu logout, dan memanggil `disableAutoSelect()` Google agar
+  pengguna tidak otomatis masuk lagi lewat One Tap.
+
 ### Roles
 - **User**: Create & manage own interactions
 - **Administrator**: View all interactions, manage users
@@ -231,6 +275,8 @@ const { user, interactions, responses, login, logout, ... } = useStore()
 // State persisted to localStorage:
 // - fa_users
 // - fa_session
+// - fa_session_info (detail sesi: provider, loginAt, lastSeenAt, tabOpenedAt, restored)
+// - fa_session_history (lastTabClosedAt, lastLogoutAt)
 // - fa_inter
 // - fa_resp
 // - fa_media

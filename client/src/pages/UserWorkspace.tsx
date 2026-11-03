@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore, type Interaction, type Kind, type Response, type Status } from '../services/store'
 import { MediaUpload } from '../components/MediaUpload'
+import { SessionStatus } from '../components/SessionStatus'
 import { Bar, Btn, Card, Field, KIND, KindBadge, Logo, Paginated, QR, STATUSES, StatusPill, exportCsv, fmtDate, inputCls, publicUrl } from '../components/ui'
 
 type Nav = 'home' | Kind | 'flow'
@@ -44,17 +45,13 @@ export default function UserWorkspace({ asUserId, onBack, adminBanner }: { asUse
           ))}
         </nav>
         <div className="mt-auto hidden space-y-3 lg:block">
-          {adminBanner ? (
+          {adminBanner && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
               <p className="text-xs font-bold uppercase tracking-wider text-amber-600">Melihat sebagai</p>
               <p className="font-semibold text-ink">{adminBanner}</p>
             </div>
-          ) : (
-            <div className="rounded-xl bg-ground p-3 text-sm">
-              <p className="font-semibold">{user!.username}</p>
-              <p className="text-xs text-mute">User</p>
-            </div>
           )}
+          <SessionStatus />
           {onBack ? (
             <Btn variant="ghost" className="w-full" onClick={onBack}>← Kembali ke Admin</Btn>
           ) : (
@@ -112,6 +109,7 @@ function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername }: {
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-brand">{greetSub}</p>
           <h1 className="font-display text-4xl font-extrabold tracking-tight">{kind ? KIND[kind].long : greetLabel}</h1>
+          {!targetUsername && <div className="mt-3"><SessionStatus variant="pill" /></div>}
         </div>
         {kind ? (
           <Btn onClick={() => onCreate(kind)}>+ Buat {KIND[kind].label}</Btn>

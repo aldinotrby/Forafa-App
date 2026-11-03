@@ -1,0 +1,18 @@
+{
+  "name": "forafa-server",
+  "version": "1.0.0",
+  "description": "Backend REST API for Forafa-App (Platform Partisipasi Publik)",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev:php": "php -S 0.0.0.0:8000 router.php",
+    "setup:db": "php setup.php"
+  },
+  "keywords": [
+    "forafa",
+    "backend",
+    "rest-api"
+  ],
+  "author": "",
+  "license": "ISC"
+}

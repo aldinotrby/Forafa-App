@@ -96,7 +96,7 @@ export function QR({ value, size = 168 }: { value: string; size?: number }) {
 
 export function exportCsv(name: string, rows: Response[]) {
   const esc = (v?: string) => `"${(v ?? '').replace(/"/g, '""')}"`
-  const csv = ['waktu,nama,pilihan,pesan,status,balasan', ...rows.map((r) => [r.at, r.name, r.choice, r.message, r.status, r.reply].map(esc).join(','))].join('\n')
+  const csv = ['waktu,nama,pilihan,pesan,status,balasan', ...rows.map((r) => [r.at, r.name || 'Anonim', r.choice, r.message, r.status, r.reply].map(esc).join(','))].join('\n')
   const a = document.createElement('a')
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
   a.download = `${name}.csv`

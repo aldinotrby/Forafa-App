@@ -67,6 +67,12 @@ export interface Response {
   reply?: string
   shared?: boolean
   at: string
+  /**
+   * true bila pengirim memilih "Isi sebagai Anonymous" di form publik:
+   * nama tidak diminta, tidak disimpan, dan ditampilkan sebagai "Anonim".
+   * Untuk interaksi jenis 'anon' kolom ini selalu dianggap true.
+   */
+  anonymous?: boolean
 }
 
 interface Store {
@@ -202,6 +208,7 @@ const normalizeResponse = (raw: any): Response => ({
   reply: raw.reply || undefined,
   shared: Boolean(raw.shared),
   at: String(raw.at || raw.created_at || new Date().toISOString()),
+  anonymous: raw.anonymous ? true : undefined,
 })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

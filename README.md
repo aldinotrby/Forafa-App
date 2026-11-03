@@ -95,6 +95,35 @@ npm run test:watch # Watch mode (if configured)
 - No name/tracking info stored
 - Transparent communication
 
+### 🪪 Pilihan Identitas (Form Publik)
+
+Pengunjung yang membuka public link (Voting & Kritik & Saran) memilih
+identitasnya sebelum mengisi:
+
+- **Tampilkan nama** — nama ditulis sendiri dan tampil bersama jawaban
+  kepada pemilik interaksi.
+- **Isi sebagai Anonymous** — kolom nama disembunyikan; nama tidak diminta
+  dan tidak disimpan, jawaban tercatat sebagai "Anonim" (kolom
+  `Response.anonymous`, nama dikirim kosong — sesuai kontrak API backend
+  yang memang menerima `name: null` dan memaksa anonim untuk jenis `anon`).
+
+Alur form publik:
+
+```
+1. Keterangan privasi ditampilkan di bagian atas form, sebelum mengisi
+2. Pengunjung memilih identitas → status pilihannya selalu tampil
+   (chip di judul, bar status di form, dan ringkasan di konfirmasi)
+3. Isi jawaban (vote / kritik & saran)
+4. Tahap KONFIRMASI: ringkasan identitas + jawaban ditampilkan,
+   jawaban baru terkirim setelah menekan "Ya, kirim jawaban"
+   (atau "Kembali, periksa lagi" untuk mengubah isian)
+5. Layar selesai menyebutkan terkirim sebagai Anonymous / atas nama siapa
+```
+
+Di sisi pemilik, respons anonim tampil sebagai "Anonim" dengan badge
+**Anonymous** (daftar respons, aktivitas terbaru, dan export CSV).
+Interaksi jenis Pesan Anonim selalu terkunci pada mode Anonymous.
+
 ### 👥 User Management
 - Register & login
 - Profile customization

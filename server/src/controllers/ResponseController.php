@@ -1,6 +1,7 @@
 <?php
 /**
  * Responses Management Controller
+ * Enforces creator access control and strict identity privacy filtering.
  */
 
 declare(strict_types=1);
@@ -14,6 +15,7 @@ require_once __DIR__ . '/../config/database.php';
 class ResponseController {
     /**
      * GET /responses
+     * Lists responses with privacy filtering applied.
      */
     public static function list(): void {
         $currentUser = AuthMiddleware::authenticate();
@@ -25,29 +27,38 @@ class ResponseController {
         $limit = max(1, min(1000, (int)($_GET['limit'] ?? 500)));
 
         $db = Database::getConnection();
+        ResponseModel::ensureTablesExist($db);
 
+        // 1. Single interaction requested
         if ($interactionId !== null) {
             $interaction = Interaction::findById($db, $interactionId);
             if (!$interaction) {
                 ApiResponse::error("Interaksi tidak ditemukan.", 404);
             }
+
+            // Hak akses pembuat link
             if ($currentUser['role'] !== 'Administrator' && $interaction['owner_id'] !== $currentUser['id']) {
-                ApiResponse::error("Akses ditolak.", 403);
+                ApiResponse::error("Akses ditolak. Anda bukan pembuat link interaksi ini.", 403);
             }
 
-            $sql = "SELECT * FROM responses WHERE interaction_id = :interaction_id";
+            $sql = "
+                SELECT r.*, ri.name AS identity_name, COALESCE(r.is_anonymous, ri.is_anonymous, 0) AS is_anonymous
+                FROM responses r
+                LEFT JOIN response_identities ri ON ri.response_id = r.id
+                WHERE r.interaction_id = :interaction_id
+            ";
             $params = [':interaction_id' => $interactionId];
 
             if ($status !== null) {
-                $sql .= " AND status = :status";
+                $sql .= " AND r.status = :status";
                 $params[':status'] = $status;
             }
             if ($search !== null) {
-                $sql .= " AND (LOWER(message) LIKE :search OR LOWER(name) LIKE :search OR LOWER(choice) LIKE :search)";
+                $sql .= " AND (LOWER(r.message) LIKE :search OR LOWER(ri.name) LIKE :search OR LOWER(r.choice) LIKE :search)";
                 $params[':search'] = '%' . strtolower($search) . '%';
             }
 
-            $sql .= " ORDER BY created_at DESC LIMIT :limit OFFSET :skip";
+            $sql .= " ORDER BY r.created_at DESC LIMIT :limit OFFSET :skip";
             $stmt = $db->prepare($sql);
             foreach ($params as $k => $v) {
                 $stmt->bindValue($k, $v);
@@ -56,15 +67,27 @@ class ResponseController {
             $stmt->bindValue(':skip', $skip, PDO::PARAM_INT);
             $stmt->execute();
 
-            $responses = array_map([ResponseModel::class, 'format'], $stmt->fetchAll());
+            $rawRows = $stmt->fetchAll();
+            $responses = array_map(function($r) use ($currentUser, $interaction) {
+                return ResponseModel::formatWithPrivacy($r, $currentUser, $interaction);
+            }, $rawRows);
+
             ApiResponse::json($responses, 200);
         }
 
+        // 2. All interactions allowed for the user
+        $interactionMap = [];
         if ($currentUser['role'] === 'Administrator') {
             $allInteractions = Interaction::getAll($db, null, 0, 5000);
+            foreach ($allInteractions as $i) {
+                $interactionMap[$i['id']] = $i;
+            }
             $ids = array_column($allInteractions, 'id');
         } else {
             $userInteractions = Interaction::getByOwner($db, $currentUser['id'], null, 0, 5000);
+            foreach ($userInteractions as $i) {
+                $interactionMap[$i['id']] = $i;
+            }
             $ids = array_column($userInteractions, 'id');
         }
 
@@ -73,22 +96,27 @@ class ResponseController {
         }
 
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $sql = "SELECT * FROM responses WHERE interaction_id IN ($placeholders)";
+        $sql = "
+            SELECT r.*, ri.name AS identity_name, COALESCE(r.is_anonymous, ri.is_anonymous, 0) AS is_anonymous
+            FROM responses r
+            LEFT JOIN response_identities ri ON ri.response_id = r.id
+            WHERE r.interaction_id IN ($placeholders)
+        ";
         $params = $ids;
 
         if ($status !== null) {
-            $sql .= " AND status = ?";
+            $sql .= " AND r.status = ?";
             $params[] = $status;
         }
         if ($search !== null) {
-            $sql .= " AND (LOWER(message) LIKE ? OR LOWER(name) LIKE ? OR LOWER(choice) LIKE ?)";
+            $sql .= " AND (LOWER(r.message) LIKE ? OR LOWER(ri.name) LIKE ? OR LOWER(r.choice) LIKE ?)";
             $term = '%' . strtolower($search) . '%';
             $params[] = $term;
             $params[] = $term;
             $params[] = $term;
         }
 
-        $sql .= " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+        $sql .= " ORDER BY r.created_at DESC LIMIT ? OFFSET ?";
         $stmt = $db->prepare($sql);
         $idx = 1;
         foreach ($params as $val) {
@@ -98,12 +126,18 @@ class ResponseController {
         $stmt->bindValue($idx++, $skip, PDO::PARAM_INT);
         $stmt->execute();
 
-        $responses = array_map([ResponseModel::class, 'format'], $stmt->fetchAll());
+        $rawRows = $stmt->fetchAll();
+        $responses = array_map(function($r) use ($currentUser, $interactionMap) {
+            $interaction = $interactionMap[$r['interaction_id']] ?? null;
+            return ResponseModel::formatWithPrivacy($r, $currentUser, $interaction);
+        }, $rawRows);
+
         ApiResponse::json($responses, 200);
     }
 
     /**
      * PATCH /responses/{id}
+     * Update status or reply. Restricted to creator or Administrator.
      */
     public static function update(string $id): void {
         $currentUser = AuthMiddleware::authenticate();
@@ -121,17 +155,20 @@ class ResponseController {
         }
 
         if ($currentUser['role'] !== 'Administrator' && $interaction['owner_id'] !== $currentUser['id']) {
-            ApiResponse::error("Akses ditolak.", 403);
+            ApiResponse::error("Akses ditolak. Anda bukan pembuat link interaksi ini.", 403);
         }
 
         $input = json_decode(file_get_contents('php://input'), true) ?: [];
         $updated = ResponseModel::update($db, $id, $input);
 
-        ApiResponse::json($updated, 200);
+        // Apply privacy filtering
+        $formatted = ResponseModel::formatWithPrivacy($updated, $currentUser, $interaction);
+        ApiResponse::json($formatted, 200);
     }
 
     /**
      * DELETE /responses/{id}
+     * Delete response. Restricted to creator or Administrator.
      */
     public static function delete(string $id): void {
         $currentUser = AuthMiddleware::authenticate();
@@ -149,7 +186,7 @@ class ResponseController {
         }
 
         if ($currentUser['role'] !== 'Administrator' && $interaction['owner_id'] !== $currentUser['id']) {
-            ApiResponse::error("Akses ditolak.", 403);
+            ApiResponse::error("Akses ditolak. Anda bukan pembuat link interaksi ini.", 403);
         }
 
         ResponseModel::delete($db, $id);
@@ -159,6 +196,7 @@ class ResponseController {
 
     /**
      * GET /responses/export/csv
+     * Export responses to CSV. Enforces privacy masking for anonymous participants.
      */
     public static function exportCsv(): void {
         $currentUser = AuthMiddleware::authenticate();
@@ -176,11 +214,17 @@ class ResponseController {
         }
 
         if ($currentUser['role'] !== 'Administrator' && $interaction['owner_id'] !== $currentUser['id']) {
-            ApiResponse::error("Akses ditolak.", 403);
+            ApiResponse::error("Akses ditolak. Anda bukan pembuat link interaksi ini.", 403);
         }
 
-        $responses = ResponseModel::getByInteraction($db, $interactionId, 0, 10000);
-        $csv = ResponseModel::generateCsv($responses, $interaction['title']);
+        $rawResponses = ResponseModel::getByInteraction($db, $interactionId, 0, 10000);
+
+        // Terapkan filter privasi pada data CSV
+        $filteredResponses = array_map(function($r) use ($currentUser, $interaction) {
+            return ResponseModel::formatWithPrivacy($r, $currentUser, $interaction);
+        }, $rawResponses);
+
+        $csv = ResponseModel::generateCsv($filteredResponses, $interaction['title']);
 
         $filename = 'responses-' . ($interaction['slug'] ?? $interactionId) . '.csv';
         ApiResponse::csv($csv, $filename);

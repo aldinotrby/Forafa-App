@@ -26,12 +26,14 @@ function registerApiRoutes(Router $router): void {
 
     foreach ($prefixes as $p) {
         // --------------------------------------------------------------------------
-        // Auth Routes
+        // Auth & Session Routes
         // --------------------------------------------------------------------------
         $router->post("{$p}/auth/register", [AuthController::class, 'register']);
         $router->post("{$p}/auth/login", [AuthController::class, 'login']);
         $router->post("{$p}/auth/logout", [AuthController::class, 'logout']);
         $router->get("{$p}/auth/me", [AuthController::class, 'me']);
+        $router->get("{$p}/auth/session", [AuthController::class, 'validateSession']);
+        $router->get("{$p}/auth/validate-session", [AuthController::class, 'validateSession']);
 
         // --------------------------------------------------------------------------
         // Users Management Routes (Admin & Profile)
@@ -52,6 +54,16 @@ function registerApiRoutes(Router $router): void {
         $router->patch("{$p}/interactions/{id}", [InteractionController::class, 'update']);
         $router->delete("{$p}/interactions/{id}", [InteractionController::class, 'delete']);
         $router->get("{$p}/interactions/{id}/responses", [InteractionController::class, 'getResponses']);
+
+        // --------------------------------------------------------------------------
+        // Voting Questions & Branching Routes
+        // --------------------------------------------------------------------------
+        $router->get("{$p}/interactions/{id}/questions", [QuestionController::class, 'list']);
+        $router->post("{$p}/interactions/{id}/questions", [QuestionController::class, 'create']);
+        $router->post("{$p}/interactions/{id}/questions/reorder", [QuestionController::class, 'reorder']);
+        $router->get("{$p}/interactions/{id}/questions/{qid}", [QuestionController::class, 'getDetail']);
+        $router->patch("{$p}/interactions/{id}/questions/{qid}", [QuestionController::class, 'update']);
+        $router->delete("{$p}/interactions/{id}/questions/{qid}", [QuestionController::class, 'delete']);
 
         // --------------------------------------------------------------------------
         // Responses Management Routes

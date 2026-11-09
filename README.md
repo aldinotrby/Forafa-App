@@ -8,7 +8,7 @@ Panduan lengkap dan praktis untuk mengoperasikan serta menjalankan aplikasi **Fo
 
 Pastikan lingkungan lokal Anda telah terpasang dependensi berikut:
 
-1. **Node.js**: Versi `>= 18.0.0` (termasuk `npm`).
+1. **Node.js**: Versi `^20.19.0` atau `>= 22.12.0` (termasuk `npm`) — kebutuhan Vite 8 yang dipakai frontend; versi di bawah itu membuat `npm run dev` / `npm run build` gagal berjalan.
 2. **PHP**: Versi `>= 8.1.0` (dengan ekstensi `pdo_mysql`, `mbstring`, `json`, dan `curl` aktif).
 3. **MySQL Server**: MySQL 8.0 atau MariaDB (dapat dijalankan melalui **Laragon**, **XAMPP**, **Docker**, atau layanan sistem bawaan). Pastikan layanan MySQL aktif pada port default `3306`.
 
@@ -16,13 +16,29 @@ Pastikan lingkungan lokal Anda telah terpasang dependensi berikut:
 
 ## 🗄️ Langkah 1: Inisialisasi & Migrasi Database MySQL
 
-Sebelum menjalankan server untuk pertama kali, lakukan pembuatan database `forafa_db` dan pengisian tabel bawaan:
+Dilakukan **sekali, sebelum pertama kali menjalankan aplikasi**. Pastikan layanan MySQL sudah aktif terlebih dahulu (Laragon/XAMPP/Docker/layanan sistem, port `3306`).
 
-1. Buka terminal lalu masuk ke folder `server`:
+1. Clone repository (lewati langkah ini jika kode sudah ada di komputer Anda), lalu masuk ke folder proyek:
+   ```powershell
+   git clone https://github.com/aldinotrby/Forafa-App.git
+   cd Forafa-App
+   ```
+2. Masuk ke folder `server`:
    ```powershell
    cd server
    ```
-   http://localhost:5173
+3. *(Opsional)* Sesuaikan konfigurasi database. Tanpa file `.env`, backend memakai nilai bawaan dari `.env.example` (host `127.0.0.1`, port `3306`, database `forafa_db`, user `root`, tanpa password — cocok untuk Laragon/XAMPP standar). Jika kredensial MySQL Anda berbeda, salin contohnya lalu sesuaikan nilai `DB_*` di dalamnya:
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+4. Jalankan skrip inisialisasi database:
+   ```powershell
+   php setup.php
+   ```
+   > **Catatan:** Skrip ini secara otomatis membuat database `forafa_db`, ketujuh tabelnya (`users`, `sessions`, `interactions`, `voting_questions`, `responses`, `response_identities`, `voting_answers`), serta mengisi data awal (*seed data*) — termasuk akun demo pada tabel Akun Demo di bawah.
+5. Kembali ke folder root proyek sebelum lanjut ke Langkah 2:
+   ```powershell
+   cd ..
    ```
 
 ## 📁 Project Structure
@@ -64,16 +80,10 @@ npm run preview   # Preview production build
 ### Production
 
 ```bash
-npm run build     # Build for production
-npm run build:analyze  # Analyze bundle size (if configured)
+npm run build     # Build for production (hasil di folder dist/)
 ```
 
-### Testing
-
-```bash
-npm run test      # Run tests (if configured)
-npm run test:watch # Watch mode (if configured)
-```
+> Script yang tersedia di `client/package.json` hanya `dev`, `build`, dan `preview` — saat ini belum ada script test, lint, maupun `build:analyze`.
 
 ## 🎯 Main Features
 
@@ -219,21 +229,12 @@ Tanpa variabel itu, tombol Google menampilkan petunjuk konfigurasi.
    VITE_CLOUDINARY_CLOUD_NAME=your_cloud_name
    VITE_CLOUDINARY_UPLOAD_PRESET=forafa_unsigned
    ```
-   > **Catatan:** Skrip ini secara otomatis membuat database `forafa_db`, tabel-tabel (`users`, `interactions`, `responses`), serta mengisi data awal (*seed data*).
 
 ---
 
 ## 🚀 Langkah 2: Menjalankan Backend & Frontend
 
-// State persisted to localStorage:
-// - fa_users
-// - fa_session
-// - fa_session_info (detail sesi: provider, loginAt, lastSeenAt, tabOpenedAt, restored)
-// - fa_session_history (lastTabClosedAt, lastLogoutAt)
-// - fa_inter
-// - fa_resp
-// - fa_media
-```
+Pastikan Langkah 1 sudah selesai dan layanan MySQL masih aktif, lalu jalankan backend dan frontend dalam dua terminal terpisah:
 
 ### Opsi A: Menggunakan 2 Terminal Terpisah (Direkomendasikan)
 
@@ -242,7 +243,7 @@ Tanpa variabel itu, tombol Google menampilkan petunjuk konfigurasi.
 cd server
 php -S 127.0.0.1:8000 router.php
 ```
-*Atau menggunakan runner Node:*
+*Atau menggunakan runner Node (tetap dari dalam folder `server`):*
 ```powershell
 npm start
 ```
@@ -253,10 +254,18 @@ npm start
 #### **Terminal 2: Jalankan Server Frontend Vite (Port 5173)**
 ```powershell
 cd client
-npm install      # Jalankan jika dependensi belum terpasang
+npm install      # Wajib saat pertama kali clone/pull — node_modules tidak ikut ter-commit di Git
 npm run dev
 ```
+*(Opsional, lakukan sebelum `npm run dev`)* Jika ingin memakai login Google atau upload media Cloudinary, buat file `.env` dari contohnya lalu isi nilai milik Anda (`VITE_GOOGLE_CLIENT_ID`, `VITE_CLOUDINARY_CLOUD_NAME`, `VITE_CLOUDINARY_UPLOAD_PRESET`):
+```powershell
+Copy-Item .env.example .env
+```
+Tanpa `.env`, aplikasi tetap berjalan dengan login email/password — tombol Google hanya menampilkan petunjuk konfigurasi. Vite hanya membaca `.env` saat server dimulai, jadi restart `npm run dev` setelah membuat atau mengubah `.env`.
+
 > ✅ Aplikasi frontend aktif di: **`http://localhost:5173`**
+>
+> Jika muncul error `'vite' is not recognized`, artinya dependensi belum terpasang — jalankan `npm install` di folder `client` terlebih dahulu.
 
 ---
 
@@ -267,7 +276,7 @@ Jika Anda ingin membuka kedua server secara langsung di jendela PowerShell terpi
 ```powershell
 # Jalankan dari root direktori proyek Forafa-App:
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd server; php -S 127.0.0.1:8000 router.php"
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd client; npm run dev"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd client; npm install; npm run dev"
 ```
 
 ---

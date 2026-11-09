@@ -6,7 +6,8 @@ import { fmtDate } from './ui'
  *
  * - variant="panel": rincian lengkap untuk sidebar workspace/admin —
  *   identitas, status login, cara login, waktu login, aktivitas terakhir,
- *   waktu tab dibuka, dan info sesi yang dipulihkan setelah tab ditutup.
+ *   dan waktu tab dibuka. Sesi hanya berlaku selama tab ini terbuka;
+ *   menutup tab mengakhiri sesi.
  * - variant="pill": ringkas untuk header halaman — titik presence + status.
  */
 
@@ -80,12 +81,9 @@ export function SessionStatus({ variant = 'panel', dark = false }: { variant?: '
         ))}
       </dl>
 
-      {session?.restored && (
-        <p className={`rounded-lg px-2.5 py-2 text-xs leading-relaxed ${dark ? 'bg-white/10 text-white/70' : 'bg-brand-soft text-brand'}`}>
-          Sesi dipulihkan — Anda masih login dari kunjungan sebelumnya.
-          {session.lastTabClosedAt ? <> Tab sebelumnya ditutup {fmtDate(session.lastTabClosedAt)}.</> : null}
-        </p>
-      )}
+      <p className={`rounded-lg px-2.5 py-2 text-xs leading-relaxed ${dark ? 'bg-white/10 text-white/70' : 'bg-brand-soft text-brand'}`}>
+        Sesi hanya berlaku selama tab ini terbuka — menutup tab akan mengakhiri sesi dan Anda harus login kembali.
+      </p>
     </div>
   )
 }

@@ -192,16 +192,20 @@ Tanpa variabel itu, tombol Google menampilkan petunjuk konfigurasi.
 
 ### Session & Kondisi Akun
 
-- **Persistensi sesi** — sesi tersimpan di localStorage (`fa_session` +
-  `fa_session_info`: cara login, waktu login, aktivitas terakhir, waktu tab
-  dibuka). Menutup tab/browser **tidak** mengakhiri sesi; saat tab dibuka
-  lagi sesi dipulihkan dan ditandai "Sesi dipulihkan", lengkap dengan waktu
-  tab sebelumnya ditutup (`fa_session_history`).
+- **Sesi hanya selama tab terbuka** — sesi tersimpan di `sessionStorage`
+  (`fa_session` + `fa_session_info`: cara login, waktu login, aktivitas
+  terakhir, waktu tab dibuka). Menutup tab **mengakhiri sesi**; membuka
+  aplikasi lagi — termasuk membuka URL-nya di tab baru — berarti harus
+  login kembali. Jejak di luar sesi (`fa_session_history`: waktu tab
+  terakhir ditutup & logout terakhir) tetap disimpan di localStorage dan
+  ditampilkan di halaman login.
 - **Kondisi saat tab dibuka/ditutup** — provider mendengarkan
   `visibilitychange`, `focus`/`blur` (presence: Online / Tab tidak aktif),
-  dan `pagehide`/`beforeunload` (mencatat waktu tab ditutup). Perubahan
-  `fa_session` juga disinkronkan antar-tab lewat event `storage`: logout di
-  satu tab mengeluarkan semua tab.
+  dan `pagehide`/`beforeunload` (mencatat waktu tab ditutup ke
+  `fa_session_history`). Sesi tidak disinkronkan antar-tab: setiap tab
+  mempunyai sesinya sendiri, dan login/logout di satu tab tidak
+  memengaruhi tab lain. Data pengguna (`fa_users`) tetap tersinkron
+  antar-tab lewat event `storage`.
 - **Status login pengguna** — komponen `SessionStatus` menampilkan status
   login (Masuk/Belum masuk), identitas, role, cara login (Password/Google),
   presence, waktu login & aktivitas terakhir. Tampil sebagai panel di

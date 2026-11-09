@@ -164,6 +164,13 @@ class PublicController {
             $response['answers'] = $savedAnswers;
         }
 
-        ApiResponse::json($response, 201);
+        // Kontrak API (docs/api_specification.md §6.2): respon 201 dibungkus
+        // pesan status + data tanggapan. Field "message" pada $response sendiri
+        // adalah isi pesan dari pengunjung, jadi pesan status harus menjadi
+        // field terpisah di level teratas agar tidak tertimpa/tertukar.
+        ApiResponse::json([
+            'message' => 'Tanggapan berhasil dikirim.',
+            'response' => $response,
+        ], 201);
     }
 }

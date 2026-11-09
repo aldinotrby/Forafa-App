@@ -138,7 +138,7 @@ export default function Auth() {
               Status login: <b className="text-ink">{loginStatus === 'masuk' ? 'Masuk' : 'Belum masuk'}</b>
             </p>
             {sessionHistory.lastLogoutAt && <p>Logout terakhir: {fmtDate(sessionHistory.lastLogoutAt)}</p>}
-            {sessionHistory.lastTabClosedAt && <p>Tab aplikasi terakhir ditutup: {fmtDate(sessionHistory.lastTabClosedAt)} — sesi yang belum logout akan dipulihkan saat tab dibuka lagi.</p>}
+            {sessionHistory.lastTabClosedAt && <p>Tab aplikasi terakhir ditutup: {fmtDate(sessionHistory.lastTabClosedAt)} — menutup tab mengakhiri sesi, jadi membuka aplikasi lagi berarti harus login kembali.</p>}
           </div>
         </form>
       </section>

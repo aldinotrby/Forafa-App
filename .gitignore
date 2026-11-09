@@ -1,16 +1,12 @@
-# Environment variables
-.env
-server/.env
-client/.env
-
 # Dependencies
 node_modules/
-vendor/
 
-# Local databases & logs
-*.sqlite3
-*.db
-*.log
+# Build output
+dist/
+
+# Environment variables
+.env
+client/.env
 
 # IDE & OS
 .vscode/
@@ -18,6 +14,5 @@ vendor/
 .DS_Store
 Thumbs.db
 
-# Temporary & build outputs
-dist/
-build/
+# Logs
+*.log

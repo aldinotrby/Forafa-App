@@ -25,9 +25,6 @@ Authorization: Bearer <JWT_ACCESS_TOKEN>
 
 ---
 
-<<<<<<< HEAD
-## 🔐 2. Modul Autentikasi (`/api/v1/auth`)
-=======
 ## 🔐 2. Modul Autentikasi & Pengelolaan Session (`/api/v1/auth`)
 
 Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-side Session Management** pada basis data untuk mendukung:
@@ -37,7 +34,6 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
 4. **Validasi Session Saat Membuka Tab Kembali**: Endpoint khusus untuk verifikasi session dan sinkronisasi lintas tab browser (*cross-tab sync*).
 
 ---
->>>>>>> be/server
 
 ### 2.1 Registrasi Akun Baru
 * **Method & URL**: `POST /api/v1/auth/register`
@@ -66,24 +62,16 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
       "email": "rina@desa-mekar.id",
       "role": "User",
       "created_at": "2026-10-07T07:45:00Z"
-<<<<<<< HEAD
-=======
     },
     "session": {
       "id": "sess_8f3a9e2...",
       "expires_at": "2026-10-08T07:45:00Z",
       "expires_in_seconds": 86400,
       "idle_timeout_seconds": 7200
->>>>>>> be/server
     }
   }
   ```
 
-<<<<<<< HEAD
-### 2.2 Login Pengguna & Administrator
-* **Method & URL**: `POST /api/v1/auth/login`
-* **Akses**: Publik
-=======
 ---
 
 ### 2.2 Login Pengguna & Administrator (Dengan Session Regeneration)
@@ -92,7 +80,6 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
 * **Fitur Keamanan**:
   * Melakukan verifikasi kredensial (`password_verify`).
   * Menerapkan **Session Regeneration**: jika ada session lama dari perangkat/browser terkait, session lama segera dicabut (*revoked*), dan identifier session baru dibuat secara kriptografis (`bin2hex(random_bytes(16))`).
->>>>>>> be/server
 * **Request Body**:
   ```json
   {
@@ -111,32 +98,16 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
       "email": "rina@desa-mekar.id",
       "role": "User",
       "created_at": "2026-10-07T07:45:00Z"
-<<<<<<< HEAD
-=======
     },
     "session": {
       "id": "sess_a81b2c...",
       "expires_at": "2026-10-08T07:45:00Z",
       "expires_in_seconds": 86400,
       "idle_timeout_seconds": 7200
->>>>>>> be/server
     }
   }
   ```
 
-<<<<<<< HEAD
-### 2.3 Logout Sistem
-* **Method & URL**: `POST /api/v1/auth/logout`
-* **Akses**: Publik / Login
-* **Response `200 OK`**:
-  ```json
-  {
-    "message": "Berhasil keluar sistem (Logout)."
-  }
-  ```
-
-### 2.4 Profil Pengguna yang Sedang Login
-=======
 ---
 
 ### 2.3 Logout Sistem (Penghapusan & Revokasi Session)
@@ -191,7 +162,6 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
 ---
 
 ### 2.5 Profil Pengguna yang Sedang Login
->>>>>>> be/server
 * **Method & URL**: `GET /api/v1/auth/me`
 * **Akses**: Wajib Login (`Bearer Token`)
 * **Response `200 OK`**:
@@ -239,25 +209,17 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
 
 ---
 
-<<<<<<< HEAD
-## 🗳️ 4. Modul Formulir Interaksi (`/api/v1/interactions`)
-=======
 ## 🗳️ 4. Modul Formulir Interaksi & Percabangan Voting (`/api/v1/interactions`)
 
 Modul ini mengelola hak akses pembuat link voting (*link creator access control*) serta konfigurasi pertanyaan bertingkat:
 * Pengguna hanya dapat melihat, mengedit, dan menghapus formulir voting yang mereka buat sendiri (`owner_id = user.id`).
 * Pengguna lain yang bukan pembuat link voting ditolak dengan kode `403 Forbidden`.
->>>>>>> be/server
 
 ### 4.1 Daftar Interaksi
 * **Method & URL**: `GET /api/v1/interactions`
 * **Query Params**: `kind` (`vote` | `feedback` | `anon`), `owner_id`, `search`, `active`, `skip`, `limit`
-<<<<<<< HEAD
-* **Response `200 OK`**: List formulir interaksi milik user (atau semua jika Admin).
-=======
 * **Akses**: Pengguna Biasa hanya mendapatkan formulir miliknya sendiri; Administrator dapat melihat semua atau memfilter berdasarkan `owner_id`.
 * **Response `200 OK`**: List formulir interaksi.
->>>>>>> be/server
 
 ### 4.2 Buat Formulir Interaksi Baru
 * **Method & URL**: `POST /api/v1/interactions`
@@ -265,42 +227,18 @@ Modul ini mengelola hak akses pembuat link voting (*link creator access control*
   ```json
   {
     "kind": "vote",
-<<<<<<< HEAD
-    "title": "Pemilihan Desain Lapangan Warga",
-    "description": "Pilih salah satu dari konsep desain ruang terbuka hijau.",
-    "slug": "lapangan-warga-2026",
-    "start": "2026-10-01",
-    "end": "2026-10-31",
-    "options": ["Konsep Minimalis", "Konsep Taman Anak", "Konsep Sport Hub"]
-=======
     "title": "Pemilihan Pengurus RT 2026-2028",
     "description": "Pemilihan paket kepengurusan RT.",
     "slug": "pemilihan-pengurus-rt",
     "start": "2026-10-01",
     "end": "2026-10-31",
     "options": ["Pak Suryo", "Bu Ratna", "Pak Hasan"]
->>>>>>> be/server
   }
   ```
 * **Response `201 Created`**
 
 ### 4.3 Detail Formulir Interaksi
 * **Method & URL**: `GET /api/v1/interactions/{id}`
-<<<<<<< HEAD
-
-### 4.4 Perbarui Formulir Interaksi
-* **Method & URL**: `PATCH /api/v1/interactions/{id}`
-
-### 4.5 Hapus Formulir Interaksi
-* **Method & URL**: `DELETE /api/v1/interactions/{id}`
-
-### 4.6 Tanggapan untuk Interaksi Tertentu
-* **Method & URL**: `GET /api/v1/interactions/{id}/responses`
-
----
-
-## 📬 5. Modul Tanggapan / Respons (`/api/v1/responses`)
-=======
 * **Akses**: Pembuat link (`owner_id`) atau Administrator.
 
 ### 4.4 Perbarui Formulir Interaksi
@@ -410,23 +348,10 @@ Modul ini mengimplementasikan pemisahan fisik antara **Data Jawaban Voting** (ta
 2. **Pemisahan Data Identitas**: Data identitas disimpan terisolasi di tabel `response_identities`. Pada tabel `responses`, kolom nama dikosongkan (`NULL`) untuk pengisi anonymous.
 3. **Penyensoran Identitas untuk Admin**: Admin tidak dapat melihat identitas pengisi yang memilih anonymous (`name: null`).
 4. **Penyensoran Identitas untuk Pembuat Link**: Pembuat link hanya dapat melihat identitas responden jika responden memilih memperlihatkan nama (`is_anonymous: false`).
->>>>>>> be/server
 
 ### 5.1 Daftar Semua Tanggapan
 * **Method & URL**: `GET /api/v1/responses`
 * **Query Params**: `interaction_id`, `status` (`Baru` | `Dibaca` | `Diproses` | `Selesai`), `search`, `skip`, `limit`
-<<<<<<< HEAD
-
-### 5.2 Perbarui Status & Balasan Tanggapan
-* **Method & URL**: `PATCH /api/v1/responses/{id}`
-* **Request Body**: `{"status": "Diproses", "reply": "...", "shared": true}`
-
-### 5.3 Hapus Tanggapan
-* **Method & URL**: `DELETE /api/v1/responses/{id}`
-
-### 5.4 Ekspor Data Tanggapan ke CSV
-* **Method & URL**: `GET /api/v1/responses/export/csv?interaction_id={id}`
-=======
 * **Akses**: Pembuat link (hanya untuk interaksi miliknya) atau Administrator.
 * **Response `200 OK`**:
   ```json
@@ -463,7 +388,6 @@ Modul ini mengimplementasikan pemisahan fisik antara **Data Jawaban Voting** (ta
 ### 5.4 Ekspor Data Tanggapan ke CSV (Dengan Masking Privasi)
 * **Method & URL**: `GET /api/v1/responses/export/csv?interaction_id={id}`
 * **Akses**: Pembuat link atau Administrator.
->>>>>>> be/server
 * **Header Response**: `Content-Type: text/csv`
 
 ---
@@ -473,20 +397,6 @@ Modul ini mengimplementasikan pemisahan fisik antara **Data Jawaban Voting** (ta
 ### 6.1 Buka Tampilan Publik via Slug
 * **Method & URL**: `GET /api/v1/public/{slug}`
 * **Akses**: Bebas (Tanpa Login)
-<<<<<<< HEAD
-
-### 6.2 Kirim Suara / Masukan / Pesan Anonim
-* **Method & URL**: `POST /api/v1/public/{slug}/submit`
-* **Akses**: Bebas (Tanpa Login)
-* **Request Body (Vote)**:
-  ```json
-  {
-    "choice": "Konsep Taman Anak",
-    "name": "Budi Santoso"
-  }
-  ```
-* **Response `201 Created`**
-=======
 * **Response `200 OK`**: Mengembalikan interaksi dan daftar `questions` aktif terurut.
   ```json
   {
@@ -561,21 +471,43 @@ Modul ini mengimplementasikan pemisahan fisik antara **Data Jawaban Voting** (ta
 * **Response `201 Created` (Jika Sukses & Valid)**:
   ```json
   {
-    "id": "r_9988aabb",
-    "interaction_id": "i4",
-    "name": "Budi Santoso",
-    "is_anonymous": false,
-    "choice": "Ketua: Pak Suryo, Wakil: Bu Ratna, Sekretaris: Bu Ani, Bendahara: Bu Dewi",
-    "status": "Baru",
-    "answers": [
-      { "question_id": "vq_1", "role_key": "ketua", "role_label": "Ketua", "choice": "Pak Suryo" },
-      { "question_id": "vq_2", "role_key": "wakil", "role_label": "Wakil Ketua", "choice": "Bu Ratna" },
-      { "question_id": "vq_3", "role_key": "sekretaris", "role_label": "Sekretaris", "choice": "Bu Ani" },
-      { "question_id": "vq_4", "role_key": "bendahara", "role_label": "Bendahara", "choice": "Bu Dewi" }
-    ]
+    "message": "Tanggapan berhasil dikirim.",
+    "response": {
+      "id": "r_9988aabb",
+      "interaction_id": "i4",
+      "name": "Budi Santoso",
+      "is_anonymous": false,
+      "choice": "Ketua: Pak Suryo, Wakil: Bu Ratna, Sekretaris: Bu Ani, Bendahara: Bu Dewi",
+      "status": "Baru",
+      "answers": [
+        {
+          "question_id": "vq_1",
+          "role_key": "ketua",
+          "role_label": "Ketua",
+          "choice": "Pak Suryo"
+        },
+        {
+          "question_id": "vq_2",
+          "role_key": "wakil",
+          "role_label": "Wakil Ketua",
+          "choice": "Bu Ratna"
+        },
+        {
+          "question_id": "vq_3",
+          "role_key": "sekretaris",
+          "role_label": "Sekretaris",
+          "choice": "Bu Ani"
+        },
+        {
+          "question_id": "vq_4",
+          "role_key": "bendahara",
+          "role_label": "Bendahara",
+          "choice": "Bu Dewi"
+        }
+      ]
+    }
   }
   ```
->>>>>>> be/server
 
 ---
 
@@ -583,7 +515,6 @@ Modul ini mengimplementasikan pemisahan fisik antara **Data Jawaban Voting** (ta
 
 ### 7.1 Overview Statistik Platform (Admin Only)
 * **Method & URL**: `GET /api/v1/analytics/overview`
-<<<<<<< HEAD
 * **Response `200 OK`**:
   ```json
   {
@@ -598,8 +529,6 @@ Modul ini mengimplementasikan pemisahan fisik antara **Data Jawaban Voting** (ta
     "recent_responses": [...]
   }
   ```
-=======
->>>>>>> be/server
 
 ### 7.2 Statistik Personal User (`/api/v1/analytics/user-stats`)
 * **Method & URL**: `GET /api/v1/analytics/user-stats`

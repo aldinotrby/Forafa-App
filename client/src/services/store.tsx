@@ -1,8 +1,12 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { disableGoogleAutoSelect, type GoogleProfile } from './googleAuth'
 
 export type Kind = 'vote' | 'feedback' | 'anon'
 export type Status = 'Baru' | 'Dibaca' | 'Diproses' | 'Selesai'
 export type Role = 'User' | 'Administrator'
+export type AuthProvider = 'password' | 'google'
+/** Kondisi tab saat ini: 'online' = tab aktif/terlihat, 'inactive' = tab disembunyikan / jendela tidak fokus. */
+export type Presence = 'online' | 'inactive'
 
 export interface User {
   id: string
@@ -10,6 +14,34 @@ export interface User {
   email: string
   role: Role
   avatar?: string
+  /** Cara pengguna pertama kali masuk: password atau Google. */
+  provider?: AuthProvider
+  /** Subject ID Google (`sub`), hanya untuk akun Google. */
+  googleId?: string
+}
+
+/** Informasi sesi login yang sedang berjalan. */
+export interface SessionInfo {
+  userId: string
+  provider: AuthProvider
+  /** Waktu login (ISO). */
+  loginAt: string
+  /** Aktivitas terakhir yang tercatat (ISO). */
+  lastSeenAt: string
+  /** Waktu tab ini dibuka (ISO). */
+  tabOpenedAt: string
+  /** true bila sesi ini dipulihkan dari penyimpanan setelah tab/browser dibuka lagi. */
+  restored: boolean
+  /** Waktu tab sebelumnya ditutup, bila diketahui (ISO). */
+  lastTabClosedAt?: string | null
+}
+
+/** Jejak kondisi akun di luar sesi aktif — ditampilkan juga di halaman login. */
+export interface SessionHistory {
+  /** Terakhir kali sebuah tab aplikasi ditutup (ISO). */
+  lastTabClosedAt: string | null
+  /** Terakhir kali pengguna logout (ISO). */
+  lastLogoutAt: string | null
 }
 export interface Interaction {
   id: string
@@ -35,6 +67,12 @@ export interface Response {
   reply?: string
   shared?: boolean
   at: string
+  /**
+   * true bila pengirim memilih "Isi sebagai Anonymous" di form publik:
+   * nama tidak diminta, tidak disimpan, dan ditampilkan sebagai "Anonim".
+   * Untuk interaksi jenis 'anon' kolom ini selalu dianggap true.
+   */
+  anonymous?: boolean
 }
 
 interface Store {
@@ -42,8 +80,18 @@ interface Store {
   users: User[]
   interactions: Interaction[]
   responses: Response[]
+  /** Sesi aktif; null bila belum login. */
+  session: SessionInfo | null
+  /** Kondisi tab saat ini (aktif / tidak aktif). */
+  presence: Presence
+  /** Status login ringkas: 'masuk' bila ada sesi aktif, selain itu 'keluar'. */
+  loginStatus: 'masuk' | 'keluar'
+  /** Jejak tab terakhir ditutup & logout terakhir. */
+  sessionHistory: SessionHistory
   register: (u: { username: string; email: string; password: string }) => string | null
   login: (id: string, password: string) => string | null
+  /** Login/registrasi dengan profil terverifikasi dari Google Sign-In. */
+  loginWithGoogle: (profile: GoogleProfile) => string | null
   logout: () => void
   adminCreateUser: (u: { username: string; email: string; password: string }) => string | null
   updateUser: (id: string, patch: { username?: string; email?: string; avatar?: string }) => string | null
@@ -65,10 +113,28 @@ const ago = (h: number) => new Date(Date.now() - h * 3600_000).toISOString()
 const day = (d: number) => new Date(Date.now() + d * 86400_000).toISOString().slice(0, 10)
 
 const seedUsers: (User & { password: string })[] = [
-  { id: 'u1', username: 'admin', email: 'admin@forafa.app', role: 'Administrator', password: 'admin12345' },
-  { id: 'u2', username: 'rina', email: 'rina@desa-mekar.id', role: 'User', password: 'rina12345' },
-  { id: 'u3', username: 'budi_rw', email: 'budi@rw05.id', role: 'User', password: 'budi12345' },
+  { id: 'u1', username: 'admin', email: 'admin@forafa.app', role: 'Administrator', password: 'admin12345', provider: 'password' },
+  { id: 'u2', username: 'rina', email: 'rina@desa-mekar.id', role: 'User', password: 'rina12345', provider: 'password' },
+  { id: 'u3', username: 'budi_rw', email: 'budi@rw05.id', role: 'User', password: 'budi12345', provider: 'password' },
 ]
+
+const nowIso = () => new Date().toISOString()
+
+function createSession(userId: string, provider: AuthProvider): SessionInfo {
+  const now = nowIso()
+  return { userId, provider, loginAt: now, lastSeenAt: now, tabOpenedAt: now, restored: false, lastTabClosedAt: null }
+}
+
+/** Username valid (3-20: huruf, angka, underscore) yang diturunkan dari alamat email akun Google. */
+function usernameFromEmail(email: string, taken: (candidate: string) => boolean): string {
+  const base = (email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 20) || 'user').padEnd(3, '_')
+  if (!taken(base)) return base
+  for (let n = 2; ; n++) {
+    const suffix = `_${n}`
+    const candidate = base.slice(0, 20 - suffix.length) + suffix
+    if (!taken(candidate)) return candidate
+  }
+}
 
 const seedInteractions: Interaction[] = [
   { id: 'i1', ownerId: 'u2', kind: 'vote', title: 'Pilih nama taman baru RW 05', description: 'Warga memilih satu nama untuk taman yang baru diresmikan.', slug: 'taman-rw05', active: true, start: day(-3), end: day(10), options: ['Taman Mekar Asri', 'Taman Bhineka', 'Taman Sudirman Hijau', 'Taman Cahaya'], createdAt: ago(72) },
@@ -93,6 +159,67 @@ const seedResponses: Response[] = [
   { id: 'fb10', iid: 'i5', name: 'Pak Bambang', message: 'Perlu tambah tempat sampah di depan masjid.', status: 'Baru', at: ago(6) },
 ]
 
+const API_BASE = '/api/v1'
+
+const getAuthHeaders = (): Record<string, string> => {
+  const token = localStorage.getItem('fa_token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+const apiCall = async (path: string, options: RequestInit = {}) => {
+  try {
+    return await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+        ...(options.headers || {}),
+      },
+    })
+  } catch {
+    return null
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const normalizeInteraction = (raw: any): Interaction => ({
+  id: String(raw.id),
+  ownerId: String(raw.ownerId || raw.owner_id || ''),
+  kind: raw.kind as Kind,
+  title: String(raw.title || ''),
+  description: String(raw.description || ''),
+  slug: String(raw.slug || ''),
+  active: Boolean(raw.active),
+  start: String(raw.start || ''),
+  end: String(raw.end || ''),
+  options: Array.isArray(raw.options) ? raw.options : typeof raw.options === 'string' ? JSON.parse(raw.options) : [],
+  createdAt: String(raw.createdAt || raw.created_at || new Date().toISOString()),
+  banner: raw.banner,
+})
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const normalizeResponse = (raw: any): Response => ({
+  id: String(raw.id),
+  iid: String(raw.iid || raw.interaction_id || ''),
+  name: raw.name || undefined,
+  choice: raw.choice || undefined,
+  message: raw.message || undefined,
+  status: (raw.status as Status) || 'Baru',
+  reply: raw.reply || undefined,
+  shared: Boolean(raw.shared),
+  at: String(raw.at || raw.created_at || new Date().toISOString()),
+  anonymous: raw.anonymous ? true : undefined,
+})
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const normalizeUser = (raw: any): User => ({
+  id: String(raw.id),
+  username: String(raw.username || ''),
+  email: String(raw.email || ''),
+  role: (raw.role as Role) || 'User',
+  avatar: raw.avatar,
+})
+
 function load<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key)
@@ -103,47 +230,174 @@ function load<T>(key: string, fallback: T): T {
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [users, setUsers] = useState(() => load('fa_users', seedUsers))
+  const [users, setUsers] = useState<User[]>(() => load('fa_users', seedUsers))
   const [sessionId, setSessionId] = useState<string | null>(() => load('fa_session', null))
+  const [session, setSession] = useState<SessionInfo | null>(() => load('fa_session_info', null))
+  const [sessionHistory, setSessionHistory] = useState<SessionHistory>(() => load('fa_session_history', { lastTabClosedAt: null, lastLogoutAt: null }))
+  const [presence, setPresence] = useState<Presence>(() => (typeof document !== 'undefined' && document.visibilityState === 'visible' ? 'online' : 'inactive'))
   const [interactions, setInteractions] = useState(() => load('fa_inter', seedInteractions))
   const [responses, setResponses] = useState(() => load('fa_resp', seedResponses))
+  const tabInitRef = useRef(false)
 
   useEffect(() => localStorage.setItem('fa_users', JSON.stringify(users)), [users])
   useEffect(() => localStorage.setItem('fa_session', JSON.stringify(sessionId)), [sessionId])
+  useEffect(() => {
+    if (session) localStorage.setItem('fa_session_info', JSON.stringify(session))
+    else localStorage.removeItem('fa_session_info')
+  }, [session])
+  useEffect(() => localStorage.setItem('fa_session_history', JSON.stringify(sessionHistory)), [sessionHistory])
   useEffect(() => localStorage.setItem('fa_inter', JSON.stringify(interactions)), [interactions])
   useEffect(() => localStorage.setItem('fa_resp', JSON.stringify(responses)), [responses])
 
+  // --- Kondisi akun saat tab dibuka / ditutup ---------------------------------
+  // Tab dibuka (termasuk dibuka lagi setelah ditutup): sesi yang tersimpan
+  // dipulihkan dan ditandai `restored`, lengkap dengan waktu tab sebelumnya
+  // ditutup. Sesi lama dari versi aplikasi sebelumnya (tanpa fa_session_info)
+  // dibuatkan info sesinya di sini.
+  useEffect(() => {
+    if (tabInitRef.current) return
+    tabInitRef.current = true
+    const openedAt = nowIso()
+    setSession((prev) => {
+      if (!sessionId) return prev
+      if (prev && prev.userId === sessionId) {
+        return { ...prev, tabOpenedAt: openedAt, lastSeenAt: openedAt, restored: true, lastTabClosedAt: sessionHistory.lastTabClosedAt ?? prev.lastTabClosedAt ?? null }
+      }
+      const u = users.find((x) => x.id === sessionId)
+      if (!u) return prev
+      return { ...createSession(u.id, u.provider ?? 'password'), tabOpenedAt: openedAt, restored: true, lastTabClosedAt: sessionHistory.lastTabClosedAt }
+    })
+    // Hanya dijalankan sekali saat provider dipasang (tab dibuka).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Tab terlihat / disembunyikan, jendela fokus / tidak fokus → presence + lastSeen.
+  // Tab ditutup (pagehide/beforeunload) → catat waktu tutupnya ke localStorage
+  // secara sinkron agar sempat tersimpan sebelum tab benar-benar hilang.
+  useEffect(() => {
+    const markSeen = (p: Presence) => {
+      setPresence(p)
+      if (p === 'online') setSession((prev) => (prev ? { ...prev, lastSeenAt: nowIso() } : prev))
+    }
+    const onVisibility = () => markSeen(document.visibilityState === 'visible' ? 'online' : 'inactive')
+    const onFocus = () => markSeen('online')
+    const onBlur = () => markSeen('inactive')
+    const onPageHide = () => {
+      const closedAt = nowIso()
+      try {
+        const history = load<SessionHistory>('fa_session_history', { lastTabClosedAt: null, lastLogoutAt: null })
+        localStorage.setItem('fa_session_history', JSON.stringify({ ...history, lastTabClosedAt: closedAt }))
+        const info = load<SessionInfo | null>('fa_session_info', null)
+        if (info) localStorage.setItem('fa_session_info', JSON.stringify({ ...info, lastSeenAt: closedAt }))
+      } catch {
+        // Penyimpanan tidak tersedia — kondisi tab tidak tercatat, sesi tetap aman.
+      }
+      setSessionHistory((prev) => ({ ...prev, lastTabClosedAt: closedAt }))
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('blur', onBlur)
+    window.addEventListener('pagehide', onPageHide)
+    window.addEventListener('beforeunload', onPageHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('blur', onBlur)
+      window.removeEventListener('pagehide', onPageHide)
+      window.removeEventListener('beforeunload', onPageHide)
+    }
+  }, [])
+
+  // Sinkronisasi antar-tab: login/logout di satu tab berlaku juga di tab lain.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'fa_session') {
+        const next = e.newValue ? (JSON.parse(e.newValue) as string | null) : null
+        setSessionId(next)
+        setSession(next ? load<SessionInfo | null>('fa_session_info', null) : null)
+      }
+      if (e.key === 'fa_session_info') setSession(e.newValue ? (JSON.parse(e.newValue) as SessionInfo) : null)
+      if (e.key === 'fa_users' && e.newValue) setUsers(JSON.parse(e.newValue) as typeof users)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  // Bersihkan info sesi bila ID sesi hilang (logout / akun dihapus / tab lain logout).
+  useEffect(() => {
+    if (!sessionId) setSession((prev) => (prev ? null : prev))
+  }, [sessionId])
+
   const store = useMemo<Store>(() => {
     const user = users.find((u) => u.id === sessionId) ?? null
+    const startSession = (u: User) => {
+      setSessionId(u.id)
+      setSession(createSession(u.id, u.provider ?? 'password'))
+    }
     return {
       user,
       users,
       interactions,
       responses,
+      session: session && session.userId === sessionId ? session : null,
+      presence,
+      loginStatus: user ? 'masuk' : 'keluar',
+      sessionHistory,
       register: ({ username, email, password }) => {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
         if (!/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
         if (password.length < 8) return 'Password minimal 8 karakter.'
         if (users.some((u) => u.email === email || u.username.toLowerCase() === username.toLowerCase())) return 'Email atau username sudah terdaftar.'
-        const u = { id: uid(), username, email, role: 'User' as Role, password }
+        const u = { id: uid(), username, email, role: 'User' as Role, password, provider: 'password' as AuthProvider }
         setUsers((p) => [...p, u])
-        setSessionId(u.id)
+        startSession(u)
         return null
       },
       login: (id, password) => {
         const u = users.find((x) => (x.email === id || x.username === id) && (x as never as { password: string }).password === password)
         if (!u) return 'Email/username atau password salah.'
-        setSessionId(u.id)
+        startSession(u)
         return null
       },
-      logout: () => setSessionId(null),
+      loginWithGoogle: (profile) => {
+        if (!profile.email || !profile.googleId) return 'Profil Google tidak lengkap (email tidak tersedia).'
+        if (!profile.emailVerified) return 'Email Google Anda belum terverifikasi.'
+        const existing = users.find((u) => u.googleId === profile.googleId || u.email.toLowerCase() === profile.email.toLowerCase())
+        if (existing) {
+          // Tautkan akun lama dengan Google & lengkapi foto profil bila belum ada.
+          const linked: User = { ...existing, provider: 'google', googleId: profile.googleId, avatar: existing.avatar ?? profile.picture }
+          setUsers((p) => p.map((u) => (u.id === existing.id ? { ...u, provider: 'google', googleId: profile.googleId, avatar: u.avatar ?? profile.picture } : u)))
+          startSession(linked)
+          return null
+        }
+        const username = usernameFromEmail(profile.email, (c) => users.some((u) => u.username.toLowerCase() === c.toLowerCase()))
+        // Akun Google tidak memakai password lokal: isi dengan nilai acak yang
+        // tidak diketahui siapa pun agar login password tidak bisa menebaknya.
+        const u = { id: uid(), username, email: profile.email, role: 'User' as Role, password: `google:${uid()}${uid()}${uid()}`, provider: 'google' as AuthProvider, googleId: profile.googleId, avatar: profile.picture }
+        setUsers((p) => [...p, u])
+        startSession(u)
+        return null
+      },
+      logout: () => {
+        disableGoogleAutoSelect()
+        setSessionHistory((prev) => ({ ...prev, lastLogoutAt: nowIso() }))
+        setSession(null)
+        setSessionId(null)
+      },
       adminCreateUser: ({ username, email, password }) => {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
         if (!/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
         if (password.length < 8) return 'Password minimal 8 karakter.'
         if (users.some((u) => u.email === email || u.username.toLowerCase() === username.toLowerCase())) return 'Email atau username sudah terdaftar.'
-        const u = { id: uid(), username, email, role: 'User' as Role, password }
+        const u = { id: uid(), username, email, role: 'User' as Role, password, provider: 'password' as AuthProvider }
         setUsers((p) => [...p, u])
+
+        // Asynchronously persist in backend
+        apiCall('/users', {
+          method: 'POST',
+          body: JSON.stringify({ username, email, password, role: 'User' }),
+        })
+
         return null
       },
       updateUser: (id, patch) => {
@@ -152,11 +406,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (username && !/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
         if (users.some((u) => u.id !== id && ((email && u.email === email) || (username && u.username.toLowerCase() === username.toLowerCase())))) return 'Email atau username sudah digunakan.'
         setUsers((p) => p.map((u) => (u.id === id ? { ...u, ...patch } : u)))
+
+        // Asynchronously update in backend
+        apiCall(`/users/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(patch),
+        })
+
         return null
       },
       resetUserPassword: (id, newPassword) => {
         if (newPassword.length < 8) return 'Password minimal 8 karakter.'
         setUsers((p) => p.map((u) => (u.id === id ? { ...u, password: newPassword } : u)))
+
+        // Asynchronously reset password in backend
+        apiCall(`/users/${id}/reset-password`, {
+          method: 'POST',
+          body: JSON.stringify({ new_password: newPassword }),
+        })
+
         return null
       },
       removeUser: (id) => {
@@ -165,6 +433,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setInteractions((p) => p.filter((i) => i.ownerId !== id))
         setResponses((p) => p.filter((r) => !userInteractionIds.includes(r.iid)))
         if (sessionId === id) setSessionId(null)
+
+        // Asynchronously delete in backend
+        apiCall(`/users/${id}`, { method: 'DELETE' })
       },
       addInteraction: (i, ownerIdOverride) => {
         const n: Interaction = {
@@ -175,18 +446,74 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           createdAt: new Date().toISOString(),
         }
         setInteractions((p) => [n, ...p])
+
+        // Asynchronously persist in backend
+        apiCall('/interactions', {
+          method: 'POST',
+          body: JSON.stringify({
+            kind: n.kind,
+            title: n.title,
+            description: n.description,
+            slug: n.slug,
+            start: n.start,
+            end: n.end,
+            options: n.options,
+            active: n.active,
+          }),
+        })
+
         return n
       },
-      updateInteraction: (id, patch) => setInteractions((p) => p.map((x) => (x.id === id ? { ...x, ...patch } : x))),
+      updateInteraction: (id, patch) => {
+        setInteractions((p) => p.map((x) => (x.id === id ? { ...x, ...patch } : x)))
+
+        // Asynchronously update in backend
+        apiCall(`/interactions/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(patch),
+        })
+      },
       removeInteraction: (id) => {
         setInteractions((p) => p.filter((x) => x.id !== id))
         setResponses((p) => p.filter((x) => x.iid !== id))
+
+        // Asynchronously delete in backend
+        apiCall(`/interactions/${id}`, { method: 'DELETE' })
       },
-      submit: (r) => setResponses((p) => [{ ...r, id: uid(), status: 'Baru', at: new Date().toISOString() }, ...p]),
-      patchResponse: (id, patch) => setResponses((p) => p.map((x) => (x.id === id ? { ...x, ...patch } : x))),
-      removeResponse: (id) => setResponses((p) => p.filter((x) => x.id !== id)),
+      submit: (r) => {
+        const n: Response = { ...r, id: uid(), status: 'Baru', at: new Date().toISOString() }
+        setResponses((p) => [n, ...p])
+
+        // Asynchronously submit through backend public portal
+        const targetInter = interactions.find((it) => it.id === r.iid)
+        if (targetInter?.slug) {
+          apiCall(`/public/${targetInter.slug}/submit`, {
+            method: 'POST',
+            body: JSON.stringify({
+              name: r.name,
+              choice: r.choice,
+              message: r.message,
+            }),
+          })
+        }
+      },
+      patchResponse: (id, patch) => {
+        setResponses((p) => p.map((x) => (x.id === id ? { ...x, ...patch } : x)))
+
+        // Asynchronously update in backend
+        apiCall(`/responses/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(patch),
+        })
+      },
+      removeResponse: (id) => {
+        setResponses((p) => p.filter((x) => x.id !== id))
+
+        // Asynchronously delete in backend
+        apiCall(`/responses/${id}`, { method: 'DELETE' })
+      },
     }
-  }, [users, sessionId, interactions, responses])
+  }, [users, sessionId, interactions, responses, session, presence, sessionHistory])
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore, type Interaction, type Kind, type Response, type Status } from '../services/store'
 import { MediaUpload } from '../components/MediaUpload'
+import { SessionStatus } from '../components/SessionStatus'
 import { Bar, Btn, Card, Field, KIND, KindBadge, Logo, Paginated, QR, STATUSES, StatusPill, exportCsv, fmtDate, inputCls, publicUrl } from '../components/ui'
 
 type Nav = 'home' | Kind | 'flow'
@@ -44,17 +45,13 @@ export default function UserWorkspace({ asUserId, onBack, adminBanner }: { asUse
           ))}
         </nav>
         <div className="mt-auto hidden space-y-3 lg:block">
-          {adminBanner ? (
+          {adminBanner && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
               <p className="text-xs font-bold uppercase tracking-wider text-amber-600">Melihat sebagai</p>
               <p className="font-semibold text-ink">{adminBanner}</p>
             </div>
-          ) : (
-            <div className="rounded-xl bg-ground p-3 text-sm">
-              <p className="font-semibold">{user!.username}</p>
-              <p className="text-xs text-mute">User</p>
-            </div>
           )}
+          <SessionStatus />
           {onBack ? (
             <Btn variant="ghost" className="w-full" onClick={onBack}>← Kembali ke Admin</Btn>
           ) : (
@@ -112,6 +109,7 @@ function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername }: {
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-brand">{greetSub}</p>
           <h1 className="font-display text-4xl font-extrabold tracking-tight">{kind ? KIND[kind].long : greetLabel}</h1>
+          {!targetUsername && <div className="mt-3"><SessionStatus variant="pill" /></div>}
         </div>
         {kind ? (
           <Btn onClick={() => onCreate(kind)}>+ Buat {KIND[kind].label}</Btn>
@@ -358,7 +356,7 @@ function Responses({ it, rs }: { it: Interaction; rs: Response[] }) {
       </div>
       <Paginated items={list} render={(r) => it.kind === 'vote' ? (
         <div key={r.id} className="flex items-center gap-3 py-3 text-sm">
-          <span className="flex-1 font-semibold">{r.name}</span>
+          <span className="flex-1 font-semibold">{r.name ?? 'Anonim'}{r.anonymous && <span className="ml-2 rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}</span>
           <span className="rounded-full bg-vote-soft px-3 py-0.5 text-xs font-semibold text-vote">{r.choice}</span>
           <time className="w-28 text-right text-xs text-mute">{fmtDate(r.at)}</time>
         </div>
@@ -372,14 +370,17 @@ function Responses({ it, rs }: { it: Interaction; rs: Response[] }) {
 function ResponseRow({ r, anon, onPatch, onDelete }: { r: Response; anon: boolean; onPatch: (p: Partial<Response>) => void; onDelete: () => void }) {
   const [reply, setReply] = useState(r.reply ?? '')
   const [open, setOpen] = useState(false)
+  // Anonim berlaku per-interaksi ('anon') atau per-respons (pengirim memilih Anonymous di form publik).
+  const isAnon = anon || !!r.anonymous || !r.name
   return (
     <div className="space-y-2 py-4 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <b>{anon ? 'Anonim' : r.name}</b>
+        <b>{isAnon ? 'Anonim' : r.name}</b>
+        {isAnon && <span className="rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}
         <time className="text-xs text-mute">{fmtDate(r.at)}</time>
-        {!anon && <StatusPill s={r.status} />}
+        {!isAnon && <StatusPill s={r.status} />}
         <div className="ml-auto flex gap-2">
-          {!anon && (
+          {!isAnon && (
             <select aria-label="Ubah status" className="rounded-md border border-line bg-white px-2 py-1 text-xs" value={r.status} onChange={(e) => onPatch({ status: e.target.value as Status })}>
               {STATUSES.map((s) => <option key={s}>{s}</option>)}
             </select>

@@ -1,44 +1,26 @@
-# Forafa-App Frontend
+# Forafa-App
 
-React frontend application untuk Forafa-App - Platform Partisipasi Publik Digital.
+Panduan lengkap dan praktis untuk mengoperasikan serta menjalankan aplikasi **Forafa-App** (Frontend, Backend, dan Database MySQL) secara bersamaan di lingkungan lokal (*development*).
 
-## 📋 Quick Overview
+---
 
-```
-Frontend (You are here)
-├── React 19 + TypeScript
-├── Vite build tool
-├── Tailwind CSS styling
-├── Cloudinary media storage
-└── Local state management (Context API)
-```
+## 📋 Prasyarat Sistem (*Prerequisites*)
 
-## 🚀 Getting Started
+Pastikan lingkungan lokal Anda telah terpasang dependensi berikut:
 
-### Prerequisites
+1. **Node.js**: Versi `>= 18.0.0` (termasuk `npm`).
+2. **PHP**: Versi `>= 8.1.0` (dengan ekstensi `pdo_mysql`, `mbstring`, `json`, dan `curl` aktif).
+3. **MySQL Server**: MySQL 8.0 atau MariaDB (dapat dijalankan melalui **Laragon**, **XAMPP**, **Docker**, atau layanan sistem bawaan). Pastikan layanan MySQL aktif pada port default `3306`.
 
-- Node.js >= 18.0.0
-- npm >= 9.0.0 or pnpm >= 8.0.0
+---
 
-### Setup
+## 🗄️ Langkah 1: Inisialisasi & Migrasi Database MySQL
 
-1. **Install Dependencies**
-   ```bash
-   npm install
-   ```
+Sebelum menjalankan server untuk pertama kali, lakukan pembuatan database `forafa_db` dan pengisian tabel bawaan:
 
-2. **Setup Environment (Optional)**
-   ```bash
-   cp .env.example .env
-   # Edit .env untuk Cloudinary configuration
-   ```
-
-3. **Start Development Server**
-   ```bash
-   npm run dev
-   ```
-
-4. **Open in Browser**
+1. Buka terminal lalu masuk ke folder `server`:
+   ```powershell
+   cd server
    ```
    http://localhost:5173
    ```
@@ -55,10 +37,12 @@ src/
 │
 ├── components/            # Reusable components
 │   ├── ui.tsx            # UI components (buttons, cards, etc)
-│   └── MediaUpload.tsx    # File upload component
+│   ├── MediaUpload.tsx    # File upload component
+│   └── SessionStatus.tsx  # Login status & session info (panel + pill)
 │
 ├── services/             # Business logic
-│   ├── store.tsx         # React Context + state management
+│   ├── store.tsx         # React Context + state management (auth & session)
+│   ├── googleAuth.ts     # Google Sign-In (Google Identity Services)
 │   └── mediaService.ts   # Cloudinary integration
 │
 ├── App.tsx               # Main router
@@ -111,6 +95,35 @@ npm run test:watch # Watch mode (if configured)
 - No name/tracking info stored
 - Transparent communication
 
+### 🪪 Pilihan Identitas (Form Publik)
+
+Pengunjung yang membuka public link (Voting & Kritik & Saran) memilih
+identitasnya sebelum mengisi:
+
+- **Tampilkan nama** — nama ditulis sendiri dan tampil bersama jawaban
+  kepada pemilik interaksi.
+- **Isi sebagai Anonymous** — kolom nama disembunyikan; nama tidak diminta
+  dan tidak disimpan, jawaban tercatat sebagai "Anonim" (kolom
+  `Response.anonymous`, nama dikirim kosong — sesuai kontrak API backend
+  yang memang menerima `name: null` dan memaksa anonim untuk jenis `anon`).
+
+Alur form publik:
+
+```
+1. Keterangan privasi ditampilkan di bagian atas form, sebelum mengisi
+2. Pengunjung memilih identitas → status pilihannya selalu tampil
+   (chip di judul, bar status di form, dan ringkasan di konfirmasi)
+3. Isi jawaban (vote / kritik & saran)
+4. Tahap KONFIRMASI: ringkasan identitas + jawaban ditampilkan,
+   jawaban baru terkirim setelah menekan "Ya, kirim jawaban"
+   (atau "Kembali, periksa lagi" untuk mengubah isian)
+5. Layar selesai menyebutkan terkirim sebagai Anonymous / atas nama siapa
+```
+
+Di sisi pemilik, respons anonim tampil sebagai "Anonim" dengan badge
+**Anonymous** (daftar respons, aktivitas terbaru, dan export CSV).
+Interaksi jenis Pesan Anonim selalu terkunci pada mode Anonymous.
+
 ### 👥 User Management
 - Register & login
 - Profile customization
@@ -148,6 +161,48 @@ npm run test:watch # Watch mode (if configured)
 3. Redirected to dashboard (role-based)
 ```
 
+### Login dengan Google
+```
+1. Click "Lanjutkan dengan Google" (tombol resmi Google Identity Services)
+2. Choose a Google account — ID token (JWT) dikembalikan Google ke browser
+3. Klaim token divalidasi di client: issuer Google, masa berlaku,
+   dan audience == VITE_GOOGLE_CLIENT_ID
+4. Akun dengan email yang sama ditautkan ke Google; email baru otomatis
+   dibuatkan akun User (username diturunkan dari alamat email)
+```
+
+Setup: buat OAuth 2.0 Client ID (Web) di Google Cloud Console, daftarkan
+origin aplikasi (mis. `http://localhost:5173`) sebagai Authorized JavaScript
+origin, lalu isi `VITE_GOOGLE_CLIENT_ID` di `.env` (lihat `client/.env.example`).
+Tanpa variabel itu, tombol Google menampilkan petunjuk konfigurasi.
+
+> Keamanan: validasi di browser ini untuk frontend standalone. Untuk
+> production, ID token wajib diverifikasi ulang di server (signature +
+> audience) sebelum sesi dibuat.
+
+### Session & Kondisi Akun
+
+- **Persistensi sesi** — sesi tersimpan di localStorage (`fa_session` +
+  `fa_session_info`: cara login, waktu login, aktivitas terakhir, waktu tab
+  dibuka). Menutup tab/browser **tidak** mengakhiri sesi; saat tab dibuka
+  lagi sesi dipulihkan dan ditandai "Sesi dipulihkan", lengkap dengan waktu
+  tab sebelumnya ditutup (`fa_session_history`).
+- **Kondisi saat tab dibuka/ditutup** — provider mendengarkan
+  `visibilitychange`, `focus`/`blur` (presence: Online / Tab tidak aktif),
+  dan `pagehide`/`beforeunload` (mencatat waktu tab ditutup). Perubahan
+  `fa_session` juga disinkronkan antar-tab lewat event `storage`: logout di
+  satu tab mengeluarkan semua tab.
+- **Status login pengguna** — komponen `SessionStatus` menampilkan status
+  login (Masuk/Belum masuk), identitas, role, cara login (Password/Google),
+  presence, waktu login & aktivitas terakhir. Tampil sebagai panel di
+  sidebar User Workspace & Admin Panel, sebagai pill di header dashboard,
+  dan sebagai ringkasan di halaman login (termasuk logout terakhir dan
+  waktu tab terakhir ditutup).
+- **Logout** — tombol "Keluar" tersedia di sidebar User Workspace dan
+  Admin Panel (desktop & mobile). Logout menghapus sesi dan info sesinya,
+  mencatat waktu logout, dan memanggil `disableAutoSelect()` Google agar
+  pengguna tidak otomatis masuk lagi lewat One Tap.
+
 ### Roles
 - **User**: Create & manage own interactions
 - **Administrator**: View all interactions, manage users
@@ -164,238 +219,86 @@ npm run test:watch # Watch mode (if configured)
    VITE_CLOUDINARY_CLOUD_NAME=your_cloud_name
    VITE_CLOUDINARY_UPLOAD_PRESET=forafa_unsigned
    ```
+   > **Catatan:** Skrip ini secara otomatis membuat database `forafa_db`, tabel-tabel (`users`, `interactions`, `responses`), serta mengisi data awal (*seed data*).
 
-**See `../MEDIA_STORAGE_SETUP.md` for detailed instructions**
+---
 
-### Local Fallback
-
-If Cloudinary not configured:
-- Files stored as Base64 in localStorage
-- Max 1MB per file
-- Perfect for development & testing
-
-## 🎨 UI Components
-
-Located in `src/components/ui.tsx`:
-
-| Component | Usage |
-|-----------|-------|
-| `Btn` | Customizable button (primary, ghost, danger) |
-| `Field` | Form field with label |
-| `Card` | Container/card wrapper |
-| `Logo` | App SVG logo |
-| `KindBadge` | Interaction type badge |
-| `StatusPill` | Response status indicator |
-| `Paginated` | Pagination controls |
-| `Bar` | Chart bar visualization |
-| `QR` | QR code generator |
-| `MediaUpload` | File upload with preview |
-
-## 🎨 Styling
-
-- **Framework**: Tailwind CSS 4.0.0
-- **Entry Point**: `src/index.css`
-- **Custom Theme**: CSS variables in index.css
-
-### Color Variables
-```css
---color-ink: #0d2b2e        /* Primary text */
---color-mute: #5b7275       /* Secondary text */
---color-line: #dbe6e4       /* Borders */
---color-ground: #f3f8f6     /* Background */
---color-brand: #0f766e      /* Primary brand */
---color-vote: #2563eb       /* Voting color */
---color-fb: #d97706         /* Feedback color */
---color-anon: #7c3aed       /* Anonymous color */
-```
-
-## 🌐 Routing
-
-Hash-based routing for SPA:
-
-```
-/                 → Auth (if not logged in) or Workspace
-/auth             → Login/Register page
-/#/p/:slug        → Public voting/feedback page
-/#/               → User/Admin workspace
-```
-
-## 💾 State Management
-
-Using React Context API + localStorage:
-
-```typescript
-// Access store in any component
-const { user, interactions, responses, login, logout, ... } = useStore()
+## 🚀 Langkah 2: Menjalankan Backend & Frontend
 
 // State persisted to localStorage:
 // - fa_users
 // - fa_session
+// - fa_session_info (detail sesi: provider, loginAt, lastSeenAt, tabOpenedAt, restored)
+// - fa_session_history (lastTabClosedAt, lastLogoutAt)
 // - fa_inter
 // - fa_resp
 // - fa_media
 ```
 
-## 🔄 Data Flow
+### Opsi A: Menggunakan 2 Terminal Terpisah (Direkomendasikan)
 
+#### **Terminal 1: Jalankan Server Backend API (Port 8000)**
+```powershell
+cd server
+php -S 127.0.0.1:8000 router.php
 ```
-User Action
-    ↓
-Component Handler
-    ↓
-Store Action (Context)
-    ↓
-State Update
-    ↓
-localStorage Persistence
-    ↓
-Component Re-render
+*Atau menggunakan runner Node:*
+```powershell
+npm start
 ```
-
-## 📊 API Integration
-
-Currently using **local state only**. Future backend integration:
-
-```typescript
-// Future endpoints (example)
-POST   /api/auth/register
-POST   /api/auth/login
-GET    /api/interactions
-POST   /api/interactions
-PATCH  /api/interactions/:id
-DELETE /api/interactions/:id
-POST   /api/interactions/:id/responses
-```
-
-## 🔍 Features in Detail
-
-### Search & Filter
-
-- **Keyword Search**: Search by username, email, title, message
-- **Status Filter**: Filter by response status (New, Read, Processing, Closed)
-- **Kind Filter**: Filter by interaction type (Voting, Feedback, Anonymous)
-- **Date Range**: Filter by creation date
-
-### Pagination
-
-- Default 6 items per page
-- Navigation: Previous/Next buttons
-- Current page indicator
-- Handles edge cases (empty, single page)
-
-### Validation
-
-**Client-side:**
-- Email format validation
-- Username pattern (3-20 chars, alphanumeric + underscore)
-- Password minimum 8 characters
-- Required field checking
-- File type validation (images only)
-- File size validation (max 5MB)
-
-**Server-side:**
-- Duplicate username/email check
-- Password length verification
-- Data type validation
-- Business logic validation
-
-### Error Handling
-
-- User-friendly error messages
-- Alert dialogs for critical errors
-- Toast-like notifications
-- Form field error states
-- Graceful fallbacks
-
-## 🚀 Performance Optimization
-
-- Code splitting via Vite
-- Lazy component loading
-- Image optimization via Cloudinary
-- Efficient re-rendering (React.memo)
-- Minimal bundle size (<500KB gzipped)
-- localStorage caching
-
-## 🧪 Demo Accounts
-
-Test different features with these accounts:
-
-| Role | Username | Password |
-|------|----------|----------|
-| Admin | admin | admin12345 |
-| User | rina | rina12345 |
-| User | budi_rw | budi12345 |
-
-## 🐛 Debugging
-
-### Check LocalStorage
-```javascript
-// In browser console
-localStorage.getItem('fa_users')
-localStorage.getItem('fa_session')
-localStorage.getItem('fa_media')
-```
-
-### View Stored Data
-```javascript
-// Pretty print
-console.table(JSON.parse(localStorage.getItem('fa_users')))
-```
-
-### Clear Data
-```javascript
-localStorage.clear()
-location.reload()
-```
-
-## 📱 Browser Support
-
-- Chrome/Edge: ✅ Latest
-- Firefox: ✅ Latest
-- Safari: ✅ Latest
-- Mobile browsers: ✅ Responsive design
-
-## ♿ Accessibility
-
-- Semantic HTML
-- ARIA labels where needed
-- Keyboard navigation support
-- Focus indicators
-- Color contrast compliance
-
-## 🔒 Security Notes
-
-- Passwords validated client & server-side
-- XSS protection via React
-- No sensitive data in localStorage
-- HTTPS recommended for production
-
-## 📚 Additional Resources
-
-- [React Documentation](https://react.dev/)
-- [TypeScript Handbook](https://www.typescriptlang.org/docs/)
-- [Tailwind CSS Docs](https://tailwindcss.com/docs)
-- [Vite Guide](https://vitejs.dev/guide/)
-- [Cloudinary Docs](https://cloudinary.com/documentation/)
-
-## 🤝 Contributing
-
-1. Create feature branch (`git checkout -b feature/name`)
-2. Make changes following code style
-3. Test thoroughly
-4. Commit (`git commit -m 'Add feature'`)
-5. Push & create PR
-
-## 📄 License
-
-MIT License - See LICENSE file
+> ✅ Server backend aktif di: **`http://localhost:8000/api/v1`**
 
 ---
 
-<div align="center">
+#### **Terminal 2: Jalankan Server Frontend Vite (Port 5173)**
+```powershell
+cd client
+npm install      # Jalankan jika dependensi belum terpasang
+npm run dev
+```
+> ✅ Aplikasi frontend aktif di: **`http://localhost:5173`**
 
-**Questions?** Check docs/ or open an issue
+---
 
-Made with ❤️ using React & TypeScript
+### Opsi B: Menjalankan Sekaligus via PowerShell (Satu Perintah)
 
-</div>
+Jika Anda ingin membuka kedua server secara langsung di jendela PowerShell terpisah:
+
+```powershell
+# Jalankan dari root direktori proyek Forafa-App:
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd server; php -S 127.0.0.1:8000 router.php"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd client; npm run dev"
+```
+
+---
+
+## 🌐 Akses Aplikasi & Akun Demo Pengujian
+
+Akses aplikasi melalui peramban web di alamat: **[http://localhost:5173](http://localhost:5173)**
+
+Gunakan akun demo berikut untuk menguji berbagai peran dan fitur aplikasi:
+
+| Peran (*Role*) | Username / Email | Password | Hak Akses Fitur |
+| :--- | :--- | :--- | :--- |
+| **Administrator** | `admin` *(atau `admin@forafa.app`)* | `admin12345` | Akses panel admin, kelola semua user, lihat statistik overview, dan rekap semua interaksi. |
+| **Pengguna 1** | `rina` *(atau `rina@desa-mekar.id`)* | `rina12345` | Dashboard user, membuat voting/feedback/pesan anonim, serta melihat tanggapan masuk. |
+| **Pengguna 2** | `budi_rw` *(atau `budi@rw05.id`)* | `budi12345` | Dashboard user khusus area RW 05. |
+| **Pengunjung (Publik)** | Tanpa Login | *-* | Akses tautan publik (contoh: `http://localhost:5173/#/p/taman-rw05`) untuk mengirim suara atau masukan. |
+
+---
+
+## 🔍 Verifikasi Integrasi Server
+
+Untuk memastikan seluruh layanan terhubung dengan benar tanpa masalah CORS atau jaringan:
+
+1. **Uji Direct Health Check API Backend**:
+   ```bash
+   curl.exe http://localhost:8000/api/v1
+   ```
+   *Respon yang diharapkan:* `{"status":"ok","service":"Forafa-App Backend API", ...}`
+
+2. **Uji Reverse Proxy Frontend**:
+   ```bash
+   curl.exe http://localhost:5173/api/v1
+   ```
+   *Respon yang diharapkan:* Harus sama persis dengan poin nomor 1. Hal ini menandakan bahwa Vite dev server berhasil meneruskan permintaan API ke backend tanpa kendala CORS.

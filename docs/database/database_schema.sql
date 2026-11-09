@@ -9,14 +9,6 @@ COLLATE utf8mb4_unicode_ci;
 USE `forafa_db`;
 
 -- ------------------------------------------------------------------------------
-<<<<<<< HEAD
--- 1. Table: users
--- ------------------------------------------------------------------------------
-DROP TABLE IF EXISTS `responses`;
-DROP TABLE IF EXISTS `interactions`;
-DROP TABLE IF EXISTS `users`;
-
-=======
 -- Table Cleanup
 -- ------------------------------------------------------------------------------
 DROP TABLE IF EXISTS `voting_answers`;
@@ -30,7 +22,6 @@ DROP TABLE IF EXISTS `users`;
 -- ------------------------------------------------------------------------------
 -- 1. Table: users
 -- ------------------------------------------------------------------------------
->>>>>>> be/server
 CREATE TABLE `users` (
   `id` VARCHAR(50) NOT NULL,
   `username` VARCHAR(50) NOT NULL,
@@ -44,9 +35,6 @@ CREATE TABLE `users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------
-<<<<<<< HEAD
--- 2. Table: interactions
-=======
 -- 2. Table: sessions
 -- ------------------------------------------------------------------------------
 CREATE TABLE `sessions` (
@@ -69,7 +57,6 @@ CREATE TABLE `sessions` (
 
 -- ------------------------------------------------------------------------------
 -- 3. Table: interactions
->>>>>>> be/server
 -- ------------------------------------------------------------------------------
 CREATE TABLE `interactions` (
   `id` VARCHAR(50) NOT NULL,
@@ -90,9 +77,6 @@ CREATE TABLE `interactions` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------
-<<<<<<< HEAD
--- 3. Table: responses
-=======
 -- 4. Table: voting_questions (Pertanyaan Bertingkat & Percabangan Voting)
 -- ------------------------------------------------------------------------------
 CREATE TABLE `voting_questions` (
@@ -116,7 +100,6 @@ CREATE TABLE `voting_questions` (
 
 -- ------------------------------------------------------------------------------
 -- 5. Table: responses (Data Jawaban Voting / Masukan)
->>>>>>> be/server
 -- ------------------------------------------------------------------------------
 CREATE TABLE `responses` (
   `id` VARCHAR(50) NOT NULL,
@@ -127,23 +110,15 @@ CREATE TABLE `responses` (
   `status` VARCHAR(30) NOT NULL DEFAULT 'Baru',
   `reply` TEXT NULL,
   `shared` TINYINT(1) NOT NULL DEFAULT 0,
-<<<<<<< HEAD
-  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_responses_interaction_id` (`interaction_id`),
-=======
   `is_anonymous` TINYINT(1) NOT NULL DEFAULT 0,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_responses_interaction_id` (`interaction_id`),
   KEY `idx_responses_is_anonymous` (`is_anonymous`),
->>>>>>> be/server
   CONSTRAINT `fk_responses_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------
-<<<<<<< HEAD
-=======
 -- 6. Table: response_identities (Pemisahan Data Identitas Pemilih)
 -- ------------------------------------------------------------------------------
 CREATE TABLE `response_identities` (
@@ -179,7 +154,6 @@ CREATE TABLE `voting_answers` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------
->>>>>>> be/server
 -- SEED DATA
 -- ------------------------------------------------------------------------------
 
@@ -194,39 +168,6 @@ INSERT INTO `interactions` (`id`, `owner_id`, `kind`, `title`, `description`, `s
 ('i1', 'u2', 'vote', 'Pilih nama taman baru RW 05', 'Warga memilih satu nama untuk taman yang baru diresmikan.', 'taman-rw05', 1, DATE_FORMAT(NOW() - INTERVAL 3 DAY, '%Y-%m-%d'), DATE_FORMAT(NOW() + INTERVAL 10 DAY, '%Y-%m-%d'), '["Taman Mekar Asri", "Taman Bhineka", "Taman Sudirman Hijau", "Taman Cahaya"]', NOW() - INTERVAL 3 DAY),
 ('i2', 'u2', 'feedback', 'Kritik & Saran layanan posyandu', 'Sampaikan masukan agar layanan posyandu semakin nyaman.', 'posyandu', 1, DATE_FORMAT(NOW() - INTERVAL 14 DAY, '%Y-%m-%d'), DATE_FORMAT(NOW() + INTERVAL 30 DAY, '%Y-%m-%d'), '["Jadwal", "Fasilitas", "Petugas"]', NOW() - INTERVAL 8 DAY),
 ('i3', 'u2', 'anon', 'Kotak suara warga', 'Tulis apa saja tanpa menampilkan identitas Anda.', 'kotak-suara', 1, DATE_FORMAT(NOW() - INTERVAL 30 DAY, '%Y-%m-%d'), DATE_FORMAT(NOW() + INTERVAL 60 DAY, '%Y-%m-%d'), '[]', NOW() - INTERVAL 16 DAY),
-<<<<<<< HEAD
-('i4', 'u3', 'vote', 'Pilih ketua RT baru', 'Pemilihan ketua RT periode 2026-2028.', 'pilih-ketua-rt', 1, DATE_FORMAT(NOW() - INTERVAL 1 DAY, '%Y-%m-%d'), DATE_FORMAT(NOW() + INTERVAL 7 DAY, '%Y-%m-%d'), '["Pak Suryo", "Bu Ratna", "Pak Hasan"]', NOW() - INTERVAL 1 DAY),
-('i5', 'u3', 'feedback', 'Masukan kebersihan lingkungan', 'Sampaikan saran untuk program kebersihan RW.', 'kebersihan-rw', 1, DATE_FORMAT(NOW() - INTERVAL 5 DAY, '%Y-%m-%d'), DATE_FORMAT(NOW() + INTERVAL 25 DAY, '%Y-%m-%d'), '["Jadwal", "Peralatan", "Petugas"]', NOW() - INTERVAL 5 DAY);
-
--- Seed Responses
-INSERT INTO `responses` (`id`, `interaction_id`, `name`, `choice`, `message`, `status`, `reply`, `shared`, `created_at`) VALUES
-('v0', 'i1', 'Budi', 'Taman Mekar Asri', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 50 HOUR),
-('v1', 'i1', 'Sari', 'Taman Mekar Asri', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 45 HOUR),
-('v2', 'i1', 'Dewi', 'Taman Bhineka', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 40 HOUR),
-('v3', 'i1', 'Agus', 'Taman Mekar Asri', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 35 HOUR),
-('v4', 'i1', 'Maya', 'Taman Sudirman Hijau', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 30 HOUR),
-('v5', 'i1', 'Hendra', 'Taman Bhineka', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 25 HOUR),
-('v6', 'i1', 'Lina', 'Taman Mekar Asri', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 20 HOUR),
-('v7', 'i1', 'Rizal', 'Taman Cahaya', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 15 HOUR),
-('v8', 'i1', 'Tono', 'Taman Bhineka', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 10 HOUR),
-('v9', 'i1', 'Putri', 'Taman Mekar Asri', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 6 HOUR),
-('v10', 'i1', 'Yoga', 'Taman Sudirman Hijau', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 3 HOUR),
-('v11', 'i1', 'Nia', 'Taman Mekar Asri', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 1 HOUR),
-
-('f1', 'i2', 'Bu Ani', NULL, 'Jadwal posyandu sering bentrok dengan jam kerja, mohon ada sesi sore.', 'Baru', NULL, 0, NOW() - INTERVAL 2 HOUR),
-('f2', 'i2', 'Pak Dedi', NULL, 'Ruang tunggu kurang kursi untuk lansia.', 'Dibaca', NULL, 0, NOW() - INTERVAL 20 HOUR),
-('f3', 'i2', 'Mita', NULL, 'Petugas sangat ramah, terima kasih!', 'Selesai', 'Terima kasih atas apresiasinya, Bu Mita.', 1, NOW() - INTERVAL 60 HOUR),
-('f4', 'i2', 'Joko', NULL, 'Tolong tambah papan informasi jadwal imunisasi.', 'Diproses', 'Sedang kami siapkan minggu ini.', 1, NOW() - INTERVAL 90 HOUR),
-
-('a1', 'i3', NULL, NULL, 'Lampu jalan di gang mawar sudah seminggu mati.', 'Baru', NULL, 0, NOW() - INTERVAL 4 HOUR),
-('a2', 'i3', NULL, NULL, 'Iuran kebersihan sebaiknya dilaporkan terbuka tiap bulan.', 'Dibaca', NULL, 0, NOW() - INTERVAL 30 HOUR),
-
-('v20', 'i4', 'Wati', 'Bu Ratna', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 3 HOUR),
-('v21', 'i4', 'Slamet', 'Pak Suryo', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 5 HOUR),
-('v22', 'i4', 'Dwi', 'Bu Ratna', NULL, 'Baru', NULL, 0, NOW() - INTERVAL 8 HOUR),
-
-('fb10', 'i5', 'Pak Bambang', NULL, 'Perlu tambah tempat sampah di depan masjid.', 'Baru', NULL, 0, NOW() - INTERVAL 6 HOUR);
-=======
 ('i4', 'u3', 'vote', 'Pilih pengurus RT baru', 'Pemilihan lengkap kepengurusan RT periode 2026-2028.', 'pilih-ketua-rt', 1, DATE_FORMAT(NOW() - INTERVAL 1 DAY, '%Y-%m-%d'), DATE_FORMAT(NOW() + INTERVAL 7 DAY, '%Y-%m-%d'), '["Pak Suryo", "Bu Ratna", "Pak Hasan"]', NOW() - INTERVAL 1 DAY),
 ('i5', 'u3', 'feedback', 'Masukan kebersihan lingkungan', 'Sampaikan saran untuk program kebersihan RW.', 'kebersihan-rw', 1, DATE_FORMAT(NOW() - INTERVAL 5 DAY, '%Y-%m-%d'), DATE_FORMAT(NOW() + INTERVAL 25 DAY, '%Y-%m-%d'), '["Jadwal", "Peralatan", "Petugas"]', NOW() - INTERVAL 5 DAY);
 
@@ -301,4 +242,3 @@ INSERT INTO `voting_answers` (`id`, `response_id`, `question_id`, `role_key`, `c
 ('va_v20_2', 'v20', 'vq_2', 'wakil', 'Pak Suryo', NOW() - INTERVAL 3 HOUR),
 ('va_v20_3', 'v20', 'vq_3', 'sekretaris', 'Bu Ani', NOW() - INTERVAL 3 HOUR),
 ('va_v20_4', 'v20', 'vq_4', 'bendahara', 'Bu Dewi', NOW() - INTERVAL 3 HOUR);
->>>>>>> be/server

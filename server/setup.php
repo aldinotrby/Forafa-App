@@ -67,7 +67,11 @@ try {
 
 } catch (Throwable $e) {
     output("❌ Terjadi kesalahan: " . $e->getMessage(), $isCli);
-    output("💡 Pastikan server MySQL (Laragon/XAMPP) sudah aktif di port 3306.", $isCli);
+    if (str_contains($e->getMessage(), 'pdo_mysql')) {
+        output("💡 Ekstensi pdo_mysql belum aktif di PHP yang menjalankan perintah ini — bukan MySQL-nya yang mati. Jalankan dari terminal Laragon, aktifkan extension=pdo_mysql di php.ini CLI, atau: php -d extension=pdo_mysql setup.php", $isCli);
+    } else {
+        output("💡 Pastikan server MySQL (Laragon/XAMPP) sudah aktif di port 3306.", $isCli);
+    }
     if ($isCli) {
         exit(1);
     }

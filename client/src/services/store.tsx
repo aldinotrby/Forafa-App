@@ -30,10 +30,6 @@ export interface SessionInfo {
   lastSeenAt: string
   /** Waktu tab ini dibuka (ISO). */
   tabOpenedAt: string
-  /** true bila sesi ini dipulihkan dari penyimpanan setelah tab/browser dibuka lagi. */
-  restored: boolean
-  /** Waktu tab sebelumnya ditutup, bila diketahui (ISO). */
-  lastTabClosedAt?: string | null
 }
 
 /** Jejak kondisi akun di luar sesi aktif — ditampilkan juga di halaman login. */
@@ -122,7 +118,7 @@ const nowIso = () => new Date().toISOString()
 
 function createSession(userId: string, provider: AuthProvider): SessionInfo {
   const now = nowIso()
-  return { userId, provider, loginAt: now, lastSeenAt: now, tabOpenedAt: now, restored: false, lastTabClosedAt: null }
+  return { userId, provider, loginAt: now, lastSeenAt: now, tabOpenedAt: now }
 }
 
 /** Username valid (3-20: huruf, angka, underscore) yang diturunkan dari alamat email akun Google. */
@@ -162,7 +158,7 @@ const seedResponses: Response[] = [
 const API_BASE = '/api/v1'
 
 const getAuthHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem('fa_token')
+  const token = sessionStorage.getItem('fa_token')
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
@@ -220,9 +216,9 @@ const normalizeUser = (raw: any): User => ({
   avatar: raw.avatar,
 })
 
-function load<T>(key: string, fallback: T): T {
+function load<T>(key: string, fallback: T, storage: Storage = localStorage): T {
   try {
-    const raw = localStorage.getItem(key)
+    const raw = storage.getItem(key)
     return raw ? (JSON.parse(raw) as T) : fallback
   } catch {
     return fallback
@@ -231,8 +227,8 @@ function load<T>(key: string, fallback: T): T {
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>(() => load('fa_users', seedUsers))
-  const [sessionId, setSessionId] = useState<string | null>(() => load('fa_session', null))
-  const [session, setSession] = useState<SessionInfo | null>(() => load('fa_session_info', null))
+  const [sessionId, setSessionId] = useState<string | null>(() => load('fa_session', null, sessionStorage))
+  const [session, setSession] = useState<SessionInfo | null>(() => load('fa_session_info', null, sessionStorage))
   const [sessionHistory, setSessionHistory] = useState<SessionHistory>(() => load('fa_session_history', { lastTabClosedAt: null, lastLogoutAt: null }))
   const [presence, setPresence] = useState<Presence>(() => (typeof document !== 'undefined' && document.visibilityState === 'visible' ? 'online' : 'inactive'))
   const [interactions, setInteractions] = useState(() => load('fa_inter', seedInteractions))
@@ -240,20 +236,39 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const tabInitRef = useRef(false)
 
   useEffect(() => localStorage.setItem('fa_users', JSON.stringify(users)), [users])
-  useEffect(() => localStorage.setItem('fa_session', JSON.stringify(sessionId)), [sessionId])
+  // Sesi disimpan di sessionStorage dan diakhiri begitu halaman
+  // ditinggalkan (lihat penanganan pagehide/pageshow di bawah): menutup
+  // tab, memuat ulang halaman, atau pindah ke situs lain berarti sesi
+  // berakhir dan pengguna harus login kembali.
+  useEffect(() => sessionStorage.setItem('fa_session', JSON.stringify(sessionId)), [sessionId])
   useEffect(() => {
-    if (session) localStorage.setItem('fa_session_info', JSON.stringify(session))
-    else localStorage.removeItem('fa_session_info')
+    if (session) sessionStorage.setItem('fa_session_info', JSON.stringify(session))
+    else sessionStorage.removeItem('fa_session_info')
   }, [session])
+  // Bersihkan sesi warisan versi lama yang tersimpan permanen di localStorage,
+  // agar tidak ada sesi lama yang hidup lagi setelah perubahan ini.
+  useEffect(() => {
+    try {
+      localStorage.removeItem('fa_session')
+      localStorage.removeItem('fa_session_info')
+      localStorage.removeItem('fa_token')
+    } catch {
+      // Penyimpanan tidak tersedia — tidak ada yang perlu dibersihkan.
+    }
+  }, [])
   useEffect(() => localStorage.setItem('fa_session_history', JSON.stringify(sessionHistory)), [sessionHistory])
   useEffect(() => localStorage.setItem('fa_inter', JSON.stringify(interactions)), [interactions])
   useEffect(() => localStorage.setItem('fa_resp', JSON.stringify(responses)), [responses])
 
   // --- Kondisi akun saat tab dibuka / ditutup ---------------------------------
-  // Tab dibuka (termasuk dibuka lagi setelah ditutup): sesi yang tersimpan
-  // dipulihkan dan ditandai `restored`, lengkap dengan waktu tab sebelumnya
-  // ditutup. Sesi lama dari versi aplikasi sebelumnya (tanpa fa_session_info)
-  // dibuatkan info sesinya di sini.
+  // Sesi hanya hidup selama halaman ini terbuka (lihat pagehide/pageshow
+  // di bawah): menutup tab, memuat ulang halaman, atau meninggalkan
+  // aplikasi mengakhiri sesi, dan membuka aplikasi lagi berarti harus
+  // login kembali. Blok ini hanya menyegarkan stempel waktu bila masih
+  // ada sesi yang terbaca di tab ini (mis. tab duplikat yang menyalin
+  // sessionStorage, atau sesi yang dipulihkan browser setelah crash),
+  // dan membuatkan info sesi bila ID sesi ada tetapi info sesinya
+  // belum ada.
   useEffect(() => {
     if (tabInitRef.current) return
     tabInitRef.current = true
@@ -261,19 +276,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSession((prev) => {
       if (!sessionId) return prev
       if (prev && prev.userId === sessionId) {
-        return { ...prev, tabOpenedAt: openedAt, lastSeenAt: openedAt, restored: true, lastTabClosedAt: sessionHistory.lastTabClosedAt ?? prev.lastTabClosedAt ?? null }
+        return { ...prev, tabOpenedAt: openedAt, lastSeenAt: openedAt }
       }
       const u = users.find((x) => x.id === sessionId)
       if (!u) return prev
-      return { ...createSession(u.id, u.provider ?? 'password'), tabOpenedAt: openedAt, restored: true, lastTabClosedAt: sessionHistory.lastTabClosedAt }
+      return { ...createSession(u.id, u.provider ?? 'password'), tabOpenedAt: openedAt }
     })
     // Hanya dijalankan sekali saat provider dipasang (tab dibuka).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Tab terlihat / disembunyikan, jendela fokus / tidak fokus → presence + lastSeen.
-  // Tab ditutup (pagehide/beforeunload) → catat waktu tutupnya ke localStorage
-  // secara sinkron agar sempat tersimpan sebelum tab benar-benar hilang.
+  // Halaman dibongkar (pagehide/beforeunload: tab ditutup, halaman dimuat
+  // ulang, atau pindah ke situs lain) → catat waktu tutupnya ke localStorage
+  // secara sinkron, lalu AKHIRI SESI saat itu juga dengan menghapus kunci
+  // sesi dari sessionStorage — membuka aplikasi lagi selalu mulai dari
+  // halaman login. Pengecualian: bila halaman hanya masuk back-forward
+  // cache (pagehide dengan persisted=true), penghapusan ditunda sampai
+  // halaman dipulihkan lagi (lihat onPageShow), karena halaman yang sama
+  // akan hidup kembali.
   useEffect(() => {
     const markSeen = (p: Presence) => {
       setPresence(p)
@@ -282,48 +303,70 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const onVisibility = () => markSeen(document.visibilityState === 'visible' ? 'online' : 'inactive')
     const onFocus = () => markSeen('online')
     const onBlur = () => markSeen('inactive')
-    const onPageHide = () => {
+    const endSessionNow = () => {
+      try {
+        sessionStorage.removeItem('fa_session')
+        sessionStorage.removeItem('fa_session_info')
+        sessionStorage.removeItem('fa_token')
+      } catch {
+        // Penyimpanan tidak tersedia — tidak ada sesi yang perlu diakhiri.
+      }
+    }
+    const onPageHide = (e: Event) => {
       const closedAt = nowIso()
+      const persisted = (e as PageTransitionEvent).persisted === true
       try {
         const history = load<SessionHistory>('fa_session_history', { lastTabClosedAt: null, lastLogoutAt: null })
         localStorage.setItem('fa_session_history', JSON.stringify({ ...history, lastTabClosedAt: closedAt }))
-        const info = load<SessionInfo | null>('fa_session_info', null)
-        if (info) localStorage.setItem('fa_session_info', JSON.stringify({ ...info, lastSeenAt: closedAt }))
+        if (persisted) {
+          const info = load<SessionInfo | null>('fa_session_info', null, sessionStorage)
+          if (info) sessionStorage.setItem('fa_session_info', JSON.stringify({ ...info, lastSeenAt: closedAt }))
+        }
       } catch {
-        // Penyimpanan tidak tersedia — kondisi tab tidak tercatat, sesi tetap aman.
+        // Penyimpanan tidak tersedia — kondisi tab tidak tercatat.
       }
+      if (!persisted) endSessionNow()
       setSessionHistory((prev) => ({ ...prev, lastTabClosedAt: closedAt }))
+    }
+    const onPageShow = (e: Event) => {
+      if ((e as PageTransitionEvent).persisted !== true) return
+      // Halaman dipulihkan dari back-forward cache (mis. lewat tombol Back):
+      // pengguna sudah meninggalkan aplikasi, jadi sesi dianggap berakhir —
+      // bersihkan sesi dan keluarkan pengguna ke halaman login.
+      endSessionNow()
+      disableGoogleAutoSelect()
+      setSession(null)
+      setSessionId(null)
     }
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('focus', onFocus)
     window.addEventListener('blur', onBlur)
     window.addEventListener('pagehide', onPageHide)
     window.addEventListener('beforeunload', onPageHide)
+    window.addEventListener('pageshow', onPageShow)
     return () => {
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('focus', onFocus)
       window.removeEventListener('blur', onBlur)
       window.removeEventListener('pagehide', onPageHide)
       window.removeEventListener('beforeunload', onPageHide)
+      window.removeEventListener('pageshow', onPageShow)
     }
   }, [])
 
-  // Sinkronisasi antar-tab: login/logout di satu tab berlaku juga di tab lain.
+  // Sinkronisasi antar-tab: data pengguna tersinkron lewat localStorage.
+  // Sesi TIDAK ikut tersinkron — sesi tersimpan di sessionStorage yang
+  // terpisah untuk tiap tab, jadi setiap tab mempunyai sesinya sendiri dan
+  // login/logout di satu tab tidak memengaruhi tab lain.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === 'fa_session') {
-        const next = e.newValue ? (JSON.parse(e.newValue) as string | null) : null
-        setSessionId(next)
-        setSession(next ? load<SessionInfo | null>('fa_session_info', null) : null)
-      }
-      if (e.key === 'fa_session_info') setSession(e.newValue ? (JSON.parse(e.newValue) as SessionInfo) : null)
       if (e.key === 'fa_users' && e.newValue) setUsers(JSON.parse(e.newValue) as typeof users)
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
-  // Bersihkan info sesi bila ID sesi hilang (logout / akun dihapus / tab lain logout).
+  // Bersihkan info sesi bila ID sesi hilang (logout / akun dihapus).
   useEffect(() => {
     if (!sessionId) setSession((prev) => (prev ? null : prev))
   }, [sessionId])

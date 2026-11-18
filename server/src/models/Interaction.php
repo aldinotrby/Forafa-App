@@ -28,6 +28,7 @@ class Interaction {
             'start' => $row['start'] ?? null,
             'end' => $row['end'] ?? null,
             'options' => is_array($options) ? array_values($options) : [],
+            'recommendation_enabled' => (bool)($row['recommendation_enabled'] ?? 0),
             'created_at' => !empty($row['created_at'])
                 ? gmdate('Y-m-d\TH:i:s\Z', strtotime($row['created_at']))
                 : null,
@@ -54,6 +55,7 @@ class Interaction {
             'end' => $row['end'] ?? null,
             'options' => is_array($options) ? array_values($options) : [],
             'is_closed' => self::isClosed($row),
+            'recommendation_enabled' => (bool)($row['recommendation_enabled'] ?? 0),
         ];
     }
 
@@ -143,8 +145,8 @@ class Interaction {
         $active = isset($data['active']) ? (int)(bool)$data['active'] : 1;
 
         $stmt = $db->prepare("
-            INSERT INTO interactions (id, owner_id, kind, title, description, slug, active, start, end, options, created_at)
-            VALUES (:id, :owner_id, :kind, :title, :description, :slug, :active, :start, :end, :options, :created_at)
+            INSERT INTO interactions (id, owner_id, kind, title, description, slug, active, start, end, options, recommendation_enabled, created_at)
+            VALUES (:id, :owner_id, :kind, :title, :description, :slug, :active, :start, :end, :options, :recommendation_enabled, :created_at)
         ");
         $stmt->execute([
             ':id' => $id,
@@ -157,6 +159,7 @@ class Interaction {
             ':start' => !empty($data['start']) ? $data['start'] : null,
             ':end' => !empty($data['end']) ? $data['end'] : null,
             ':options' => $optionsJson,
+            ':recommendation_enabled' => !empty($data['recommendation_enabled']) ? 1 : 0,
             ':created_at' => $now,
         ]);
 
@@ -171,6 +174,7 @@ class Interaction {
             'start' => $data['start'] ?? null,
             'end' => $data['end'] ?? null,
             'options' => $optionsJson,
+            'recommendation_enabled' => !empty($data['recommendation_enabled']) ? 1 : 0,
             'created_at' => $now,
         ]);
     }
@@ -203,6 +207,10 @@ class Interaction {
             $fields[] = "options = :options";
             $opts = $data['options'];
             $params[':options'] = is_string($opts) ? $opts : json_encode(array_values((array)$opts), JSON_UNESCAPED_UNICODE);
+        }
+        if (array_key_exists('recommendation_enabled', $data)) {
+            $fields[] = "recommendation_enabled = :recommendation_enabled";
+            $params[':recommendation_enabled'] = !empty($data['recommendation_enabled']) ? 1 : 0;
         }
 
         if (!empty($fields)) {

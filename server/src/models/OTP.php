@@ -132,12 +132,22 @@ class OTP {
         $secret = $config['jwt']['secret'] ?? 'forafa_salt';
         $expectedHash = hash('sha256', "{$cleanPhone}:{$code}:{$secret}");
 
-        $stmt = $db->prepare("
-            SELECT * FROM otps 
-            WHERE phone_number = :phone 
-            ORDER BY created_at DESC LIMIT 1
-        ");
-        $stmt->execute([':phone' => $cleanPhone]);
+        if ($interactionId !== null) {
+            $stmt = $db->prepare("
+                SELECT * FROM otps 
+                WHERE phone_number = :phone 
+                  AND (interaction_id = :iid OR interaction_id IS NULL)
+                ORDER BY created_at DESC LIMIT 1
+            ");
+            $stmt->execute([':phone' => $cleanPhone, ':iid' => $interactionId]);
+        } else {
+            $stmt = $db->prepare("
+                SELECT * FROM otps 
+                WHERE phone_number = :phone 
+                ORDER BY created_at DESC LIMIT 1
+            ");
+            $stmt->execute([':phone' => $cleanPhone]);
+        }
         $otpRow = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$otpRow) {
@@ -200,12 +210,22 @@ class OTP {
         $cleanPhone = self::normalizePhoneNumber($phone);
         $token = trim($token);
 
-        $stmt = $db->prepare("
-            SELECT * FROM otps 
-            WHERE phone_number = :phone AND verification_token = :token AND status = 'verified'
-            ORDER BY created_at DESC LIMIT 1
-        ");
-        $stmt->execute([':phone' => $cleanPhone, ':token' => $token]);
+        if ($interactionId !== null) {
+            $stmt = $db->prepare("
+                SELECT * FROM otps 
+                WHERE phone_number = :phone AND verification_token = :token 
+                  AND status = 'verified' AND interaction_id = :iid
+                ORDER BY created_at DESC LIMIT 1
+            ");
+            $stmt->execute([':phone' => $cleanPhone, ':token' => $token, ':iid' => $interactionId]);
+        } else {
+            $stmt = $db->prepare("
+                SELECT * FROM otps 
+                WHERE phone_number = :phone AND verification_token = :token AND status = 'verified'
+                ORDER BY created_at DESC LIMIT 1
+            ");
+            $stmt->execute([':phone' => $cleanPhone, ':token' => $token]);
+        }
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$row) {

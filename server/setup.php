@@ -58,6 +58,9 @@ try {
     output(" - responses", $isCli);
     output(" - response_identities", $isCli);
     output(" - voting_answers", $isCli);
+    output(" - notifications", $isCli);
+    output(" - recommendation_rules", $isCli);
+    output(" - recommendation_results", $isCli);
     output("", $isCli);
     output("Akun bawaan yang tersedia:", $isCli);
     output(" - Administrator : admin / admin12345 (admin@forafa.app)", $isCli);

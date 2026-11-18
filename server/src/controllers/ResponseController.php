@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../models/Interaction.php';
 require_once __DIR__ . '/../models/Response.php';
+require_once __DIR__ . '/../models/Notification.php';
 require_once __DIR__ . '/../utils/Response.php';
 require_once __DIR__ . '/../middlewares/AuthMiddleware.php';
 require_once __DIR__ . '/../config/database.php';
@@ -161,9 +162,45 @@ class ResponseController {
         $input = json_decode(file_get_contents('php://input'), true) ?: [];
         $updated = ResponseModel::update($db, $id, $input);
 
+        // Notifikasi balasan: kirim ke akun pengisi bila tanggapan dibalas
+        // dan pengiriman tersebut tertaut ke sebuah akun.
+        if (array_key_exists('reply', $input)) {
+            $newReply = trim((string)($input['reply'] ?? ''));
+            $oldReply = trim((string)($response['reply'] ?? ''));
+            $recipientId = $response['user_id'] ?? null;
+
+            if ($newReply !== '' && $newReply !== $oldReply && !empty($recipientId)) {
+                Notification::create($db, [
+                    'user_id' => $recipientId,
+                    'response_id' => $id,
+                    'interaction_id' => $response['interaction_id'],
+                    'type' => 'reply',
+                    'title' => 'Balasan baru untuk tanggapan Anda',
+                    'message' => 'Pembuat link "' . ($interaction['title'] ?? 'interaksi') . '" membalas: ' . mb_substr($newReply, 0, 180),
+                ]);
+            }
+        }
+
         // Apply privacy filtering
         $formatted = ResponseModel::formatWithPrivacy($updated, $currentUser, $interaction);
         ApiResponse::json($formatted, 200);
+    }
+
+    /**
+     * GET /responses/mine
+     * Riwayat pengisian milik akun yang sedang login (hanya data sendiri).
+     */
+    public static function mine(): void {
+        $currentUser = AuthMiddleware::authenticate();
+
+        $skip = max(0, (int)($_GET['skip'] ?? 0));
+        $limit = max(1, min(500, (int)($_GET['limit'] ?? 200)));
+
+        $db = Database::getConnection();
+        ResponseModel::ensureTablesExist($db);
+
+        $responses = ResponseModel::getByUser($db, $currentUser['id'], $skip, $limit);
+        ApiResponse::json($responses, 200);
     }
 
     /**

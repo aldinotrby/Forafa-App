@@ -236,19 +236,20 @@ function Notifications({ unseen, resp, onOpenResponse, onMarkAll }: {
   const { interactions } = useStore()
   const findInteraction = (iid: string) => interactions.find((i) => i.id === iid)
   const unseenIds = new Set(unseen.map((r) => r.id))
-  const shown = [
+  const all = [
     ...unseen,
     ...[...resp].sort((a, b) => +new Date(b.at) - +new Date(a.at)).filter((r) => !unseenIds.has(r.id)),
-  ].slice(0, 12)
+  ]
   const [filter, setFilter] = useState<'Semua' | Kind>('Semua')
   const [q, setQ] = useState('')
   const [onlyNew, setOnlyNew] = useState(false)
   const [sort, setSort] = useState<'terbaru' | 'terlama'>('terbaru')
+  const [limit, setLimit] = useState(12)
   const kindOf = (r: Response) => findInteraction(r.iid)?.kind
   const unseenByKind = (k: Kind) => unseen.filter((r) => kindOf(r) === k).length
   /** 'Terbaru dulu' (bawaan): respons baru di atas, lalu riwayat terbaru.
    *  'Terlama dulu': seluruh daftar urut kronologis dari yang paling lama. */
-  const ordered = sort === 'terbaru' ? shown : [...shown].sort((a, b) => +new Date(a.at) - +new Date(b.at))
+  const ordered = sort === 'terbaru' ? all : [...all].sort((a, b) => +new Date(a.at) - +new Date(b.at))
   const filtered = ordered
     .filter((r) => filter === 'Semua' || kindOf(r) === filter)
     .filter((r) => !onlyNew || unseenIds.has(r.id))
@@ -258,6 +259,7 @@ function Notifications({ unseen, resp, onOpenResponse, onMarkAll }: {
       const hay = `${r.name ?? 'Anonim'} ${findInteraction(r.iid)?.title ?? ''}`.toLowerCase()
       return hay.includes(needle)
     })
+  const visible = filtered.slice(0, limit)
   const filterLabel = filter === 'Semua' ? 'Semua' : filter === 'vote' ? 'voting' : filter === 'feedback' ? 'kritik & saran' : 'pesan anonim'
 
   return (
@@ -313,7 +315,7 @@ function Notifications({ unseen, resp, onOpenResponse, onMarkAll }: {
 
       {filtered.length === 0 ? (
         <Card className="p-10 text-center text-sm text-mute">
-          {shown.length === 0
+          {all.length === 0
             ? 'Belum ada aktivitas di link Anda.'
             : q.trim()
               ? `Tidak ada notifikasi yang cocok dengan “${q.trim()}”.`
@@ -323,7 +325,7 @@ function Notifications({ unseen, resp, onOpenResponse, onMarkAll }: {
         </Card>
       ) : (
         <Card className="divide-y divide-line px-5">
-          {filtered.map((r) => {
+          {visible.map((r) => {
             const it = findInteraction(r.iid)
             if (!it) return null
             const isNew = unseenIds.has(r.id)
@@ -341,6 +343,14 @@ function Notifications({ unseen, resp, onOpenResponse, onMarkAll }: {
             )
           })}
         </Card>
+      )}
+      {filtered.length > limit && (
+        <div className="flex flex-col items-center gap-1.5">
+          <Btn variant="ghost" onClick={() => setLimit((n) => n + 12)}>
+            Tampilkan lebih banyak ({filtered.length - limit} lagi)
+          </Btn>
+          <p className="text-xs text-mute">Menampilkan {visible.length} dari {filtered.length} notifikasi.</p>
+        </div>
       )}
       <p className="text-xs text-mute">
         Notifikasi dihitung dari perangkat &amp; browser ini saja — respons yang masuk saat Anda tidak membuka workspace akan muncul sebagai baru di sini.

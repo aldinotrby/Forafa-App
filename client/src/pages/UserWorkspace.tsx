@@ -598,7 +598,7 @@ function Flow() {
       <Card className="p-6">
         <h2 className="font-display text-lg font-bold">Alur pengunjung (tanpa akun)</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl bg-vote-soft p-4 text-sm"><b className="text-vote">Voting</b><p className="mt-1">Buka link → verifikasi Google / WhatsApp OTP → jawab tiap pertanyaan (Ketua, Wakil, …) → kirim vote</p></div>
+          <div className="rounded-xl bg-vote-soft p-4 text-sm"><b className="text-vote">Voting</b><p className="mt-1">Buka link → verifikasi Google / WhatsApp OTP → jawab tiap pertanyaan (Ketua, Wakil, …) — bila ragu, pakai "Bantuan memilih voting yang tepat" → kirim vote</p></div>
           <div className="rounded-xl bg-fb-soft p-4 text-sm"><b className="text-fb">Kritik &amp; Saran</b><p className="mt-1">Buka link → isi nama → tulis masukan → kirim</p></div>
           <div className="rounded-xl bg-anon-soft p-4 text-sm"><b className="text-anon">Anonim</b><p className="mt-1">Buka link → tulis pesan → kirim (tanpa identitas)</p></div>
         </div>

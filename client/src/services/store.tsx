@@ -194,6 +194,7 @@ const seedResponses: Response[] = [
   { id: 'f3', iid: 'i2', name: 'Mita', message: 'Petugas sangat ramah, terima kasih!', status: 'Selesai', reply: 'Terima kasih atas apresiasinya, Bu Mita.', at: ago(60) },
   { id: 'f4', iid: 'i2', name: 'Joko', message: 'Tolong tambah papan informasi jadwal imunisasi.', status: 'Diproses', reply: 'Sedang kami siapkan minggu ini.', at: ago(90) },
   { id: 'f5', iid: 'i2', name: 'Wati', message: '[Jadwal] Mohon ada sesi sore untuk posyandu.', status: 'Diproses', reply: 'Baik, mulai bulan depan kami buka sesi sore tiap Rabu.', voterKey: 'wa:628123456789', verifiedVia: 'whatsapp', verificationLabel: '+62 812-****-789', at: ago(120) },
+  { id: 'f6', iid: 'i2', name: 'Slamet', message: 'Mohon jadwal ronda malam diumumkan di grup.', status: 'Selesai', reply: 'Sudah diumumkan, terima kasih masukannya.', voterKey: 'google:110012345678901234567', verifiedVia: 'google', verificationLabel: 's***@gmail.com', at: ago(200) },
   { id: 'a1', iid: 'i3', message: 'Lampu jalan di gang mawar sudah seminggu mati.', status: 'Baru', at: ago(4) },
   { id: 'a2', iid: 'i3', message: 'Iuran kebersihan sebaiknya dilaporkan terbuka tiap bulan.', status: 'Dibaca', at: ago(30) },
   { id: 'v30', iid: 'i6', name: 'Wati', choice: 'Ketua: Bu Ratna; Wakil Ketua: Dewi Lestari; Sekretaris: Maya Putri; Bendahara: Sari Wulandari', choices: { q1: 'Bu Ratna', q2: 'Dewi Lestari', q3: 'Maya Putri', q4: 'Sari Wulandari' }, voterKey: 'wa:628123456789', verifiedVia: 'whatsapp', verificationLabel: '+62 812-****-789', status: 'Baru', at: ago(2) },

@@ -13,6 +13,8 @@ import {
   type VerifiedVoter,
 } from '../services/otpService'
 import { Btn, Card, Field, KIND, KindBadge, Logo, fmtDate, inputCls } from '../components/ui'
+import { loadSeenReplyIds, markRepliesSeen } from '../services/replyNotifications'
+import VoteHelper from './VoteHelper'
 
 /** Cara pengunjung mengidentifikasi diri saat mengisi form publik. */
 type Identity = 'nama' | 'anon'
@@ -29,12 +31,23 @@ const flowQuestions = (it: Interaction | undefined): VoteQuestion[] =>
 const multiSummary = (qs: VoteQuestion[], answers: Record<string, string>) =>
   qs.map((q) => `${q.title}: ${answers[q.id] ?? '—'}`).join('; ')
 
-function QuestionBlock({ q, num, value, onPick }: { q: VoteQuestion; num: number; value: string; onPick: (label: string) => void }) {
+function QuestionBlock({ q, num, value, onPick, onHelp }: { q: VoteQuestion; num: number; value: string; onPick: (label: string) => void; onHelp?: () => void }) {
+  const activeOptions = q.options.filter((o) => o.active)
   return (
     <fieldset className="space-y-2">
       <legend className="mb-1 text-xs font-semibold uppercase tracking-wider text-mute">
         Pertanyaan {num} — {q.title}
       </legend>
+      {onHelp && activeOptions.length >= 2 && (
+        <button
+          type="button"
+          onClick={onHelp}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-vote/50 bg-vote-soft/50 px-4 py-2.5 text-sm font-semibold text-vote transition-colors hover:bg-vote-soft"
+        >
+          ✨ Bantuan memilih voting yang tepat
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">AI SEGERA HADIR</span>
+        </button>
+      )}
       {q.options.map((o) => (
         <label
           key={o.label}
@@ -343,6 +356,33 @@ export default function Public({ slug }: { slug: string }) {
   const [topic, setTopic] = useState('')
   const [identity, setIdentity] = useState<Identity>('nama')
   const [answers, setAnswers] = useState<Record<string, string>>({})
+  /** Bantuan memilih: pertanyaan yang sedang dibantu + apakah voting satu pertanyaan. */
+  const [helper, setHelper] = useState<{ q: VoteQuestion; single: boolean } | null>(null)
+  /** Jumlah suara per label untuk pertanyaan yang sedang dibantu. */
+  const helperCounts = (q: VoteQuestion, single: boolean) => {
+    const rs = responses.filter((r) => r.iid === it?.id)
+    const counts: Record<string, number> = {}
+    for (const r of rs) {
+      const picked = single ? r.choice : r.choices?.[q.id]
+      if (picked) counts[picked] = (counts[picked] ?? 0) + 1
+    }
+    return { counts, total: rs.length }
+  }
+  /** "Gunakan rekomendasi": pilihan langsung terisi, lalu kembali ke form. */
+  const useRecommendation = (label: string) => {
+    if (!helper) return
+    if (helper.single) setChoice(label)
+    else setAnswers((p) => ({ ...p, [helper.q.id]: label }))
+    setWarn('')
+    setHelper(null)
+  }
+  const helperData = helper ? helperCounts(helper.q, helper.single) : null
+  /** Id respons yang balasannya sudah dibaca (notifikasi balasan). */
+  const [seenIds, setSeenIds] = useState<string[]>(() => loadSeenReplyIds())
+  /** Balasan yang belum dibaca untuk masukan Anda di link ini. */
+  const myUnseenReplies = voter
+    ? responses.filter((r) => r.iid === it?.id && r.voterKey === voter.key && r.reply && !seenIds.includes(r.id))
+    : []
   const [view, setView] = useState<MultiView>('page')
   const [step, setStep] = useState(0)
   const [warn, setWarn] = useState('')
@@ -514,6 +554,17 @@ export default function Public({ slug }: { slug: string }) {
                 )}
               </div>
 
+              {phase === 'isi' && (it.kind === 'feedback' || it.kind === 'anon') && myUnseenReplies.length > 0 && (
+                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4" role="status">
+                  <span className="text-xl" aria-hidden>🔔</span>
+                  <p className="min-w-0 flex-1 text-sm leading-relaxed text-amber-900">
+                    <b>Ada {myUnseenReplies.length} balasan baru</b> dari pembuat link untuk masukan Anda di link ini.
+                  </p>
+                  <a href="#/riwayat" className="text-sm font-semibold text-brand hover:underline">Lihat balasan</a>
+                  <Btn type="button" variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setSeenIds(markRepliesSeen(myUnseenReplies.map((r) => r.id)))}>Tandai sudah dibaca</Btn>
+                </div>
+              )}
+
               {closed ? (
                 <p className="rounded-lg bg-ground p-4 text-sm font-medium text-mute">Interaksi ini sedang tidak aktif atau di luar periode.</p>
               ) : phase === 'verifikasi' ? (
@@ -544,6 +595,14 @@ export default function Public({ slug }: { slug: string }) {
                   <p className="text-sm text-brand/80" role="status">
                     {isAnon ? 'Terkirim sebagai Anonymous — identitas Anda tidak tercatat.' : `Terkirim atas nama ${name.trim()}.`}
                   </p>
+                  {(it.kind === 'feedback' || it.kind === 'anon') && (
+                    <p className="text-sm text-brand/80" role="status">
+                      Status pengiriman: <b className="text-brand">✓ Terkirim</b>
+                      {voter
+                        ? ' — pantau status & balasan di Riwayat Saya.'
+                        : ' — verifikasi identitas saat mengisi agar status & balasan tercatat di Riwayat Saya.'}
+                    </p>
+                  )}
                   {multi && (
                     <dl className="space-y-1.5 rounded-xl bg-white/70 p-4 text-left text-sm">
                       {qs.map((q) => (
@@ -715,7 +774,7 @@ export default function Public({ slug }: { slug: string }) {
 
                       {view === 'page' && cur ? (
                         <div className="space-y-4">
-                          <QuestionBlock q={cur} num={step + 1} value={answers[cur.id] ?? ''} onPick={(label) => { setAnswers((p) => ({ ...p, [cur.id]: label })); setWarn('') }} />
+                          <QuestionBlock q={cur} num={step + 1} value={answers[cur.id] ?? ''} onPick={(label) => { setAnswers((p) => ({ ...p, [cur.id]: label })); setWarn('') }} onHelp={() => setHelper({ q: cur, single: false })} />
                           <div className="flex gap-2">
                             <Btn type="button" variant="ghost" className="flex-1 py-2.5" disabled={step === 0} onClick={() => { setStep((s) => Math.max(0, s - 1)); setWarn('') }}>← Sebelumnya</Btn>
                             {step < qs.length - 1 ? (
@@ -728,7 +787,7 @@ export default function Public({ slug }: { slug: string }) {
                       ) : (
                         <div className="space-y-5">
                           {qs.map((q, i) => (
-                            <QuestionBlock key={q.id} q={q} num={i + 1} value={answers[q.id] ?? ''} onPick={(label) => { setAnswers((p) => ({ ...p, [q.id]: label })); setWarn('') }} />
+                            <QuestionBlock key={q.id} q={q} num={i + 1} value={answers[q.id] ?? ''} onPick={(label) => { setAnswers((p) => ({ ...p, [q.id]: label })); setWarn('') }} onHelp={() => setHelper({ q, single: false })} />
                           ))}
                         </div>
                       )}
@@ -736,6 +795,16 @@ export default function Public({ slug }: { slug: string }) {
                   ) : it.kind === 'vote' ? (
                     <fieldset className="space-y-2">
                       <legend className="mb-1 text-xs font-semibold uppercase tracking-wider text-mute">Pilih salah satu</legend>
+                      {it.options.length >= 2 && (
+                        <button
+                          type="button"
+                          onClick={() => setHelper({ q: { id: 'single', title: it.title, active: true, options: it.options.map((label) => ({ label, active: true })) }, single: true })}
+                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-vote/50 bg-vote-soft/50 px-4 py-2.5 text-sm font-semibold text-vote transition-colors hover:bg-vote-soft"
+                        >
+                          ✨ Bantuan memilih voting yang tepat
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">AI SEGERA HADIR</span>
+                        </button>
+                      )}
                       {it.options.map((o) => (
                         <label key={o} className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition-colors ${choice === o ? 'border-vote bg-vote-soft' : 'border-line hover:bg-ground'}`}>
                           <input type="radio" name="opt" className="accent-vote" checked={choice === o} onChange={() => setChoice(o)} required />{o}
@@ -755,6 +824,16 @@ export default function Public({ slug }: { slug: string }) {
               )}
             </div>
           </Card>
+        )}
+        {helper && helperData && (
+          <VoteHelper
+            questionTitle={helper.q.title}
+            options={helper.q.options.filter((o) => o.active).map((o) => o.label)}
+            counts={helperData.counts}
+            totalVotes={helperData.total}
+            onUse={useRecommendation}
+            onClose={() => setHelper(null)}
+          />
         )}
         <p className="mt-6 text-center text-xs text-mute">
           <a href="#/riwayat" className="font-semibold text-brand hover:underline">Lihat riwayat pengisian saya</a>

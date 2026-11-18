@@ -11,6 +11,12 @@ USE `forafa_db`;
 -- ------------------------------------------------------------------------------
 -- Table Cleanup
 -- ------------------------------------------------------------------------------
+DROP TABLE IF EXISTS `recommendation_results`;
+DROP TABLE IF EXISTS `recommendation_rules`;
+DROP TABLE IF EXISTS `notifications`;
+DROP TABLE IF EXISTS `rate_limits`;
+DROP TABLE IF EXISTS `interaction_participants`;
+DROP TABLE IF EXISTS `otps`;
 DROP TABLE IF EXISTS `voting_answers`;
 DROP TABLE IF EXISTS `voting_questions`;
 DROP TABLE IF EXISTS `response_identities`;
@@ -69,6 +75,7 @@ CREATE TABLE `interactions` (
   `start` VARCHAR(30) NULL,
   `end` VARCHAR(30) NULL,
   `options` JSON NOT NULL,
+  `recommendation_enabled` TINYINT(1) NOT NULL DEFAULT 0,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_interactions_slug` (`slug`),
@@ -111,11 +118,14 @@ CREATE TABLE `responses` (
   `reply` TEXT NULL,
   `shared` TINYINT(1) NOT NULL DEFAULT 0,
   `is_anonymous` TINYINT(1) NOT NULL DEFAULT 0,
+  `user_id` VARCHAR(50) NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_responses_interaction_id` (`interaction_id`),
   KEY `idx_responses_is_anonymous` (`is_anonymous`),
-  CONSTRAINT `fk_responses_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE CASCADE
+  KEY `idx_responses_user_id` (`user_id`),
+  CONSTRAINT `fk_responses_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_responses_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------
@@ -151,6 +161,114 @@ CREATE TABLE `voting_answers` (
   KEY `idx_voting_answers_question` (`question_id`),
   CONSTRAINT `fk_voting_answers_response` FOREIGN KEY (`response_id`) REFERENCES `responses` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_voting_answers_question` FOREIGN KEY (`question_id`) REFERENCES `voting_questions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 8. Table: otps (WhatsApp OTP Verification & Anti-Spam)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `otps` (
+  `id` VARCHAR(50) NOT NULL,
+  `interaction_id` VARCHAR(50) NULL,
+  `phone_number` VARCHAR(30) NOT NULL,
+  `otp_hash` VARCHAR(64) NOT NULL,
+  `verification_token` VARCHAR(64) NULL,
+  `attempts` INT NOT NULL DEFAULT 0,
+  `status` VARCHAR(20) NOT NULL DEFAULT 'pending',
+  `expires_at` DATETIME NOT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_otps_phone` (`phone_number`),
+  KEY `idx_otps_token` (`verification_token`),
+  KEY `idx_otps_expires` (`expires_at`),
+  CONSTRAINT `fk_otps_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 9. Table: interaction_participants (Satu Identitas = Satu Voting per Link)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `interaction_participants` (
+  `id` VARCHAR(50) NOT NULL,
+  `interaction_id` VARCHAR(50) NOT NULL,
+  `participant_type` VARCHAR(20) NOT NULL,
+  `identifier_hash` VARCHAR(64) NOT NULL,
+  `response_id` VARCHAR(50) NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_participant` (`interaction_id`, `participant_type`, `identifier_hash`),
+  KEY `idx_participants_interaction` (`interaction_id`),
+  KEY `idx_participants_response` (`response_id`),
+  CONSTRAINT `fk_participants_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_participants_response` FOREIGN KEY (`response_id`) REFERENCES `responses` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 12. Table: recommendation_rules (Aturan IF-ELSE Rekomendasi Voting)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `recommendation_rules` (
+  `id` VARCHAR(50) NOT NULL,
+  `interaction_id` VARCHAR(50) NOT NULL,
+  `target_question_id` VARCHAR(50) NOT NULL,
+  `conditions` JSON NOT NULL,
+  `recommended_choice` VARCHAR(255) NOT NULL,
+  `priority` INT NOT NULL DEFAULT 0,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_recommendation_rules_interaction` (`interaction_id`),
+  KEY `idx_recommendation_rules_target` (`target_question_id`),
+  KEY `idx_recommendation_rules_priority` (`priority`),
+  CONSTRAINT `fk_recommendation_rules_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_recommendation_rules_target` FOREIGN KEY (`target_question_id`) REFERENCES `voting_questions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 13. Table: recommendation_results (Hasil Rekomendasi per Pengisian)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `recommendation_results` (
+  `id` VARCHAR(50) NOT NULL,
+  `response_id` VARCHAR(50) NOT NULL,
+  `interaction_id` VARCHAR(50) NOT NULL,
+  `mode` VARCHAR(20) NOT NULL DEFAULT 'manual',
+  `recommendations` JSON NULL,
+  `matched_rule_ids` JSON NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_recommendation_results_response` (`response_id`),
+  KEY `idx_recommendation_results_interaction` (`interaction_id`),
+  CONSTRAINT `fk_recommendation_results_response` FOREIGN KEY (`response_id`) REFERENCES `responses` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_recommendation_results_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 11. Table: notifications (Notifikasi Balasan untuk Pengisi)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `notifications` (
+  `id` VARCHAR(50) NOT NULL,
+  `user_id` VARCHAR(50) NOT NULL,
+  `response_id` VARCHAR(50) NULL,
+  `interaction_id` VARCHAR(50) NULL,
+  `type` VARCHAR(30) NOT NULL DEFAULT 'reply',
+  `title` VARCHAR(255) NOT NULL,
+  `message` TEXT NULL,
+  `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_notifications_user` (`user_id`),
+  KEY `idx_notifications_is_read` (`is_read`),
+  CONSTRAINT `fk_notifications_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_notifications_response` FOREIGN KEY (`response_id`) REFERENCES `responses` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_notifications_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 10. Table: rate_limits (Penyimpanan Counter Rate Limiting)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `rate_limits` (
+  `key_hash` VARCHAR(64) NOT NULL,
+  `hits` INT NOT NULL DEFAULT 1,
+  `reset_at` DATETIME NOT NULL,
+  PRIMARY KEY (`key_hash`),
+  KEY `idx_rate_limits_reset` (`reset_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------

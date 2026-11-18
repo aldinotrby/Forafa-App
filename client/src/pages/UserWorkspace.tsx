@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useStore, type Interaction, type Kind, type Response, type Status, type VoteQuestion } from '../services/store'
+import { loadSeenResponseIds, markResponseSeen, markResponsesSeen } from '../services/ownerNotifications'
 import { MediaUpload } from '../components/MediaUpload'
 import { SessionStatus } from '../components/SessionStatus'
 import { Bar, Btn, Card, Field, KIND, KindBadge, Logo, Paginated, QR, STATUSES, StatusPill, exportCsv, fmtDate, inputCls, publicUrl } from '../components/ui'
 
-type Nav = 'home' | Kind | 'flow'
+type Nav = 'home' | Kind | 'flow' | 'notif'
 
 export default function UserWorkspace({ asUserId, onBack, adminBanner }: { asUserId?: string; onBack?: () => void; adminBanner?: string } = {}) {
   const { user, logout, interactions } = useStore()
@@ -12,6 +13,19 @@ export default function UserWorkspace({ asUserId, onBack, adminBanner }: { asUse
   const [nav, setNav] = useState<Nav>('home')
   const [openId, setOpenId] = useState<string | null>(null)
   const [creating, setCreating] = useState<Kind | null>(null)
+  /** Id respons yang sudah dibaca owner (notifikasi masukan baru). */
+  const [seenIds, setSeenIds] = useState<string[]>(() => loadSeenResponseIds())
+  const { mine, resp } = useMine(effectiveUserId)
+  /** Respons masuk yang belum dibaca, urut terbaru dulu. */
+  const unseen = useMemo(
+    () => [...resp.filter((r) => !seenIds.includes(r.id))].sort((a, b) => +new Date(b.at) - +new Date(a.at)),
+    [resp, seenIds],
+  )
+  /** Buka respons dari notifikasi: tandai dibaca lalu buka detail interaksinya. */
+  const openResponse = (r: Response) => {
+    setSeenIds(markResponseSeen(r.id))
+    setOpenId(r.iid)
+  }
 
   const go = (n: Nav) => { setNav(n); setOpenId(null) }
   const open = interactions.find((i) => i.id === openId)
@@ -22,6 +36,7 @@ export default function UserWorkspace({ asUserId, onBack, adminBanner }: { asUse
     { id: 'feedback', label: 'Kritik & Saran', icon: KIND.feedback.icon },
     { id: 'anon', label: 'Pesan Anonim', icon: KIND.anon.icon },
     { id: 'flow', label: 'Alur Kerja', icon: '⇢' },
+    { id: 'notif', label: 'Notifikasi', icon: '🔔' },
   ]
 
   return (
@@ -41,6 +56,11 @@ export default function UserWorkspace({ asUserId, onBack, adminBanner }: { asUse
             <button key={n.id} onClick={() => go(n.id)} aria-current={nav === n.id}
               className={`flex shrink-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${nav === n.id ? 'bg-ink text-white' : 'text-mute hover:bg-ground hover:text-ink'}`}>
               <span className="w-4 text-center">{n.icon}</span>{n.label}
+              {n.id === 'notif' && unseen.length > 0 && (
+                <span className="ml-auto rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white" aria-label={`${unseen.length} notifikasi belum dibaca`}>
+                  {unseen.length > 9 ? '9+' : unseen.length}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -62,11 +82,18 @@ export default function UserWorkspace({ asUserId, onBack, adminBanner }: { asUse
 
       <main className="min-w-0 p-5 sm:p-8">
         {open ? (
-          <Detail it={open} back={() => setOpenId(null)} />
+          <Detail it={open} back={() => setOpenId(null)} seenIds={seenIds} onSeenChange={setSeenIds} />
         ) : nav === 'flow' ? (
           <Flow />
+        ) : nav === 'notif' ? (
+          <Notifications
+            unseen={unseen}
+            resp={resp}
+            onOpenResponse={openResponse}
+            onMarkAll={() => setSeenIds(markResponsesSeen(unseen.map((r) => r.id)))}
+          />
         ) : (
-          <Listing nav={nav} onOpen={setOpenId} onCreate={setCreating} effectiveUserId={effectiveUserId} targetUsername={adminBanner} />
+          <Listing nav={nav} onOpen={setOpenId} onCreate={setCreating} effectiveUserId={effectiveUserId} targetUsername={adminBanner} seenIds={seenIds} />
         )}
       </main>
 
@@ -89,12 +116,12 @@ function useMine(effectiveUserId: string) {
   return { mine, resp: responses.filter((r) => ids.has(r.iid)) }
 }
 
-function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername }: {
-  nav: Nav; onOpen: (id: string) => void; onCreate: (k: Kind) => void; effectiveUserId: string; targetUsername?: string
+function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername, seenIds }: {
+  nav: Nav; onOpen: (id: string) => void; onCreate: (k: Kind) => void; effectiveUserId: string; targetUsername?: string; seenIds: string[]
 }) {
   const { user, interactions } = useStore()
   const { mine, resp } = useMine(effectiveUserId)
-  const kind = nav === 'home' || nav === 'flow' ? null : nav
+  const kind = nav === 'home' || nav === 'flow' || nav === 'notif' ? null : nav
   const list = kind ? mine.filter((i) => i.kind === kind) : mine
   const count = (k: Kind) => mine.filter((i) => i.kind === k).length
   const recent = [...resp].sort((a, b) => +new Date(b.at) - +new Date(a.at)).slice(0, 6)
@@ -149,6 +176,7 @@ function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername }: {
                   return (
                     <li key={r.id} className="flex items-center gap-3 py-3 text-sm">
                       <span className={`size-2.5 shrink-0 rounded-full ${KIND[it.kind].bg}`} />
+                      {!seenIds.includes(r.id) && <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">BARU</span>}
                       <span className="min-w-0 flex-1 truncate">
                         <b>{r.name ?? 'Anonim'}</b>{' '}
                         {r.choice ? `memilih ${r.choice}` : `menulis: ${r.message}`}
@@ -172,11 +200,15 @@ function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername }: {
         <div className="grid gap-3 md:grid-cols-2">
           {list.map((i) => {
             const n = resp.filter((r) => r.iid === i.id).length
+            const nNew = resp.filter((r) => r.iid === i.id && !seenIds.includes(r.id)).length
             return (
               <button key={i.id} onClick={() => onOpen(i.id)} className="group rounded-2xl border border-line bg-white p-5 text-left transition-shadow hover:shadow-md">
                 <div className="flex items-center justify-between">
                   <KindBadge k={i.kind} />
-                  <span className={`text-xs font-semibold ${i.active ? 'text-emerald-600' : 'text-mute'}`}>{i.active ? '● Aktif' : '○ Nonaktif'}</span>
+                  <span className="flex items-center gap-2">
+                    {nNew > 0 && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">{nNew} baru</span>}
+                    <span className={`text-xs font-semibold ${i.active ? 'text-emerald-600' : 'text-mute'}`}>{i.active ? '● Aktif' : '○ Nonaktif'}</span>
+                  </span>
                 </div>
                 <h3 className="mt-3 font-display text-lg font-bold leading-snug group-hover:text-brand">{i.title}</h3>
                 <p className="mt-1 line-clamp-2 text-sm text-mute">{i.description}</p>
@@ -186,6 +218,68 @@ function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername }: {
           })}
         </div>
       </section>
+    </div>
+  )
+}
+
+/**
+ * Halaman Notifikasi owner: respons masuk yang belum dibaca di urutan
+ * teratas (dengan lencana BARU), lalu riwayat respons terbaru. Membuka
+ * sebuah respons menandainya dibaca dan membuka detail interaksinya.
+ */
+function Notifications({ unseen, resp, onOpenResponse, onMarkAll }: {
+  unseen: Response[]
+  resp: Response[]
+  onOpenResponse: (r: Response) => void
+  onMarkAll: () => void
+}) {
+  const { interactions } = useStore()
+  const findInteraction = (iid: string) => interactions.find((i) => i.id === iid)
+  const unseenIds = new Set(unseen.map((r) => r.id))
+  const shown = [
+    ...unseen,
+    ...[...resp].sort((a, b) => +new Date(b.at) - +new Date(a.at)).filter((r) => !unseenIds.has(r.id)),
+  ].slice(0, 12)
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest text-brand">Notifikasi</p>
+          <h1 className="font-display text-4xl font-extrabold tracking-tight">Masukan baru</h1>
+          <p className="mt-1 text-sm text-mute">
+            {unseen.length > 0 ? `${unseen.length} respons belum dibaca di link Anda.` : 'Semua respons sudah dibaca.'}
+          </p>
+        </div>
+        {unseen.length > 0 && <Btn variant="ghost" onClick={onMarkAll}>Tandai semua sudah dibaca</Btn>}
+      </header>
+
+      {shown.length === 0 ? (
+        <Card className="p-10 text-center text-sm text-mute">Belum ada aktivitas di link Anda.</Card>
+      ) : (
+        <Card className="divide-y divide-line px-5">
+          {shown.map((r) => {
+            const it = findInteraction(r.iid)
+            if (!it) return null
+            const isNew = unseenIds.has(r.id)
+            return (
+              <div key={r.id} className="flex flex-wrap items-center gap-3 py-4 text-sm">
+                <span className={`size-2.5 shrink-0 rounded-full ${KIND[it.kind].bg}`} aria-hidden />
+                {isNew && <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">BARU</span>}
+                <span className="min-w-0 flex-1 truncate">
+                  <b>{r.name ?? 'Anonim'}</b>{' '}
+                  {r.choice ? `memilih ${r.choice}` : `menulis: ${r.message}`}
+                </span>
+                <button className="shrink-0 text-xs font-semibold text-brand hover:underline" onClick={() => onOpenResponse(r)}>{it.title}</button>
+                <time className="shrink-0 text-xs text-mute">{fmtDate(r.at)}</time>
+              </div>
+            )
+          })}
+        </Card>
+      )}
+      <p className="text-xs text-mute">
+        Notifikasi dihitung dari perangkat &amp; browser ini saja — respons yang masuk saat Anda tidak membuka workspace akan muncul sebagai baru di sini.
+      </p>
     </div>
   )
 }
@@ -323,10 +417,18 @@ function Create({ kind, onClose, onDone, ownerIdOverride }: { kind: Kind; onClos
   )
 }
 
-function Detail({ it, back }: { it: Interaction; back: () => void }) {
+function Detail({ it, back, seenIds, onSeenChange }: { it: Interaction; back: () => void; seenIds: string[]; onSeenChange: (ids: string[]) => void }) {
   const { responses, updateInteraction, removeInteraction } = useStore()
   const [tab, setTab] = useState<'hasil' | 'respons' | 'bagikan'>('hasil')
   const rs = responses.filter((r) => r.iid === it.id)
+  // Membuka tab Respons berarti owner sudah melihat responsnya.
+  useEffect(() => {
+    if (tab !== 'respons') return
+    const fresh = rs.filter((r) => !seenIds.includes(r.id)).map((r) => r.id)
+    if (fresh.length > 0) onSeenChange(markResponsesSeen(fresh))
+    // rs/seenIds sengaja tidak di-deps: penandaan hanya saat tab dibuka.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab])
   const m = KIND[it.kind]
   const tabs = [
     ['hasil', it.kind === 'vote' ? 'Hasil & Statistik' : 'Statistik'],
@@ -355,7 +457,7 @@ function Detail({ it, back }: { it: Interaction; back: () => void }) {
       </div>
 
       {tab === 'hasil' && <Stats it={it} rs={rs} />}
-      {tab === 'respons' && <Responses it={it} rs={rs} />}
+      {tab === 'respons' && <Responses it={it} rs={rs} seenIds={seenIds} />}
       {tab === 'bagikan' && (
         <div className="space-y-6">
           <Share it={it} />
@@ -464,7 +566,7 @@ function VerifiedChip({ r }: { r: Response }) {
   )
 }
 
-function Responses({ it, rs }: { it: Interaction; rs: Response[] }) {
+function Responses({ it, rs, seenIds }: { it: Interaction; rs: Response[]; seenIds: string[] }) {
   const { patchResponse, removeResponse } = useStore()
   const [q, setQ] = useState('')
   const [st, setSt] = useState<'Semua' | Status>('Semua')
@@ -485,6 +587,7 @@ function Responses({ it, rs }: { it: Interaction; rs: Response[] }) {
         <div key={r.id} className="space-y-2 py-3 text-sm">
           <div className="flex flex-wrap items-center gap-2">
             <span className="flex-1 font-semibold">{r.name ?? 'Anonim'}{r.anonymous && <span className="ml-2 rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}</span>
+            {!seenIds.includes(r.id) && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">BARU</span>}
             <VerifiedChip r={r} />
             <time className="w-28 text-right text-xs text-mute">{fmtDate(r.at)}</time>
           </div>
@@ -497,18 +600,19 @@ function Responses({ it, rs }: { it: Interaction; rs: Response[] }) {
       ) : it.kind === 'vote' ? (
         <div key={r.id} className="flex flex-wrap items-center gap-2 py-3 text-sm">
           <span className="flex-1 font-semibold">{r.name ?? 'Anonim'}{r.anonymous && <span className="ml-2 rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}</span>
+          {!seenIds.includes(r.id) && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">BARU</span>}
           <VerifiedChip r={r} />
           <span className="rounded-full bg-vote-soft px-3 py-0.5 text-xs font-semibold text-vote">{r.choice}</span>
           <time className="w-28 text-right text-xs text-mute">{fmtDate(r.at)}</time>
         </div>
       ) : (
-        <ResponseRow key={r.id} r={r} anon={it.kind === 'anon'} onPatch={(p) => patchResponse(r.id, p)} onDelete={() => removeResponse(r.id)} />
+        <ResponseRow key={r.id} r={r} anon={it.kind === 'anon'} isNew={!seenIds.includes(r.id)} onPatch={(p) => patchResponse(r.id, p)} onDelete={() => removeResponse(r.id)} />
       )} />
     </Card>
   )
 }
 
-function ResponseRow({ r, anon, onPatch, onDelete }: { r: Response; anon: boolean; onPatch: (p: Partial<Response>) => void; onDelete: () => void }) {
+function ResponseRow({ r, anon, isNew, onPatch, onDelete }: { r: Response; anon: boolean; isNew: boolean; onPatch: (p: Partial<Response>) => void; onDelete: () => void }) {
   const [reply, setReply] = useState(r.reply ?? '')
   const [open, setOpen] = useState(false)
   // Anonim berlaku per-interaksi ('anon') atau per-respons (pengirim memilih Anonymous di form publik).
@@ -517,6 +621,7 @@ function ResponseRow({ r, anon, onPatch, onDelete }: { r: Response; anon: boolea
     <div className="space-y-2 py-4 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <b>{isAnon ? 'Anonim' : r.name}</b>
+        {isNew && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">BARU</span>}
         {isAnon && <span className="rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}
         <time className="text-xs text-mute">{fmtDate(r.at)}</time>
         {!isAnon && <StatusPill s={r.status} />}

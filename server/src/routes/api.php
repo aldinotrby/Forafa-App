@@ -78,6 +78,10 @@ function registerApiRoutes(Router $router): void {
         // --------------------------------------------------------------------------
         $router->get("{$p}/public/{slug}", [PublicController::class, 'getDetail']);
         $router->post("{$p}/public/{slug}/submit", [PublicController::class, 'submit']);
+        // Verifikasi voter (dipakai halaman publik sebelum voting):
+        // OTP WhatsApp — 1 nomor = 1 suara, kode 6 angka, maks. 3x percobaan.
+        $router->post("{$p}/public/{slug}/otp/send", [OtpController::class, 'send']);
+        $router->post("{$p}/public/{slug}/otp/verify", [OtpController::class, 'verify']);
 
         // --------------------------------------------------------------------------
         // Analytics & Overview Routes

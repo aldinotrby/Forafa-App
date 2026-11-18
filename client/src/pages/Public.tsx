@@ -13,6 +13,7 @@ import {
   type VerifiedVoter,
 } from '../services/otpService'
 import { Btn, Card, Field, KIND, KindBadge, Logo, fmtDate, inputCls } from '../components/ui'
+import { loadSeenReplyIds, markRepliesSeen } from '../services/replyNotifications'
 import VoteHelper from './VoteHelper'
 
 /** Cara pengunjung mengidentifikasi diri saat mengisi form publik. */
@@ -376,6 +377,12 @@ export default function Public({ slug }: { slug: string }) {
     setHelper(null)
   }
   const helperData = helper ? helperCounts(helper.q, helper.single) : null
+  /** Id respons yang balasannya sudah dibaca (notifikasi balasan). */
+  const [seenIds, setSeenIds] = useState<string[]>(() => loadSeenReplyIds())
+  /** Balasan yang belum dibaca untuk masukan Anda di link ini. */
+  const myUnseenReplies = voter
+    ? responses.filter((r) => r.iid === it?.id && r.voterKey === voter.key && r.reply && !seenIds.includes(r.id))
+    : []
   const [view, setView] = useState<MultiView>('page')
   const [step, setStep] = useState(0)
   const [warn, setWarn] = useState('')
@@ -547,6 +554,17 @@ export default function Public({ slug }: { slug: string }) {
                 )}
               </div>
 
+              {phase === 'isi' && (it.kind === 'feedback' || it.kind === 'anon') && myUnseenReplies.length > 0 && (
+                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4" role="status">
+                  <span className="text-xl" aria-hidden>🔔</span>
+                  <p className="min-w-0 flex-1 text-sm leading-relaxed text-amber-900">
+                    <b>Ada {myUnseenReplies.length} balasan baru</b> dari pembuat link untuk masukan Anda di link ini.
+                  </p>
+                  <a href="#/riwayat" className="text-sm font-semibold text-brand hover:underline">Lihat balasan</a>
+                  <Btn type="button" variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setSeenIds(markRepliesSeen(myUnseenReplies.map((r) => r.id)))}>Tandai sudah dibaca</Btn>
+                </div>
+              )}
+
               {closed ? (
                 <p className="rounded-lg bg-ground p-4 text-sm font-medium text-mute">Interaksi ini sedang tidak aktif atau di luar periode.</p>
               ) : phase === 'verifikasi' ? (
@@ -577,6 +595,14 @@ export default function Public({ slug }: { slug: string }) {
                   <p className="text-sm text-brand/80" role="status">
                     {isAnon ? 'Terkirim sebagai Anonymous — identitas Anda tidak tercatat.' : `Terkirim atas nama ${name.trim()}.`}
                   </p>
+                  {(it.kind === 'feedback' || it.kind === 'anon') && (
+                    <p className="text-sm text-brand/80" role="status">
+                      Status pengiriman: <b className="text-brand">✓ Terkirim</b>
+                      {voter
+                        ? ' — pantau status & balasan di Riwayat Saya.'
+                        : ' — verifikasi identitas saat mengisi agar status & balasan tercatat di Riwayat Saya.'}
+                    </p>
+                  )}
                   {multi && (
                     <dl className="space-y-1.5 rounded-xl bg-white/70 p-4 text-left text-sm">
                       {qs.map((q) => (

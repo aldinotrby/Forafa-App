@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useStore, type Interaction, type Response } from '../services/store'
 import { initGoogleSignIn, isGoogleConfigured } from '../services/googleAuth'
 import { loadIdentities, removeIdentity, saveIdentity, type VerifiedVoter } from '../services/otpService'
+import { loadSeenReplyIds, markRepliesSeen, markReplySeen } from '../services/replyNotifications'
 import { Btn, Card, KindBadge, Logo, StatusPill, fmtDate } from '../components/ui'
 
 function GoogleIcon() {
@@ -30,6 +31,8 @@ export default function VoterDashboard() {
   const [identities, setIdentities] = useState<VerifiedVoter[]>(() => loadIdentities())
   const [selectedKey, setSelectedKey] = useState<string>(() => loadIdentities()[0]?.key ?? '')
   const [openReplyId, setOpenReplyId] = useState<string | null>(null)
+  /** Id respons yang balasannya sudah dibaca (notifikasi balasan). */
+  const [seenIds, setSeenIds] = useState<string[]>(() => loadSeenReplyIds())
   const [showGoogle, setShowGoogle] = useState(false)
   const [googleErr, setGoogleErr] = useState<string | null>(null)
   const googleBtnRef = useRef<HTMLDivElement>(null)
@@ -79,6 +82,10 @@ export default function VoterDashboard() {
   const voteResponses = myResponses.filter((r) => findInteraction(r.iid)?.kind === 'vote')
   const feedbackResponses = myResponses.filter((r) => findInteraction(r.iid)?.kind !== 'vote')
   const repliesReceived = feedbackResponses.filter((r) => r.reply).length
+  /** Balasan yang belum dibaca untuk identitas yang dipilih. */
+  const unseen = selected
+    ? [...responses.filter((r) => r.voterKey === selected.key && r.reply && !seenIds.includes(r.id))].sort((a, b) => +new Date(b.at) - +new Date(a.at))
+    : []
 
   // Link voting yang pernah diisi (unik per interaksi, beserta pengisian terakhir).
   const voteLinks = (() => {
@@ -165,6 +172,18 @@ export default function VoterDashboard() {
               </Card>
             )}
 
+            {/* Notifikasi balasan baru dari pembuat link */}
+            {unseen.length > 0 && (
+              <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4" role="status">
+                <span className="text-xl" aria-hidden>🔔</span>
+                <p className="min-w-0 flex-1 text-sm leading-relaxed text-amber-900">
+                  <b>Ada {unseen.length} balasan baru dari pembuat link</b> untuk kritik &amp; saran Anda. Buka detail balasan di bawah untuk membacanya.
+                </p>
+                <a href="#kritik-saran" className="text-sm font-semibold text-brand hover:underline">Lihat balasan</a>
+                <Btn variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setSeenIds(markRepliesSeen(unseen.map((r) => r.id)))}>Tandai sudah dibaca</Btn>
+              </div>
+            )}
+
             {/* Profil pengguna */}
             <Card className="flex flex-wrap items-center gap-4 p-6">
               <span className="flex size-16 shrink-0 items-center justify-center rounded-full bg-brand font-display text-2xl font-extrabold text-white" aria-hidden>
@@ -245,7 +264,7 @@ export default function VoterDashboard() {
             </section>
 
             {/* Riwayat kritik & saran + status & detail balasan */}
-            <section className="space-y-3">
+            <section className="space-y-3" id="kritik-saran">
               <h2 className="font-display text-xl font-bold">Riwayat kritik &amp; saran</h2>
               {feedbackResponses.length === 0 ? (
                 <Card className="p-6 text-center text-sm text-mute">
@@ -260,6 +279,9 @@ export default function VoterDashboard() {
                       <Card key={r.id} className="p-5">
                         <div className="flex flex-wrap items-center gap-2 text-sm">
                           <b className="flex-1">{it?.title ?? 'Link dihapus'}</b>
+                          {r.reply && !seenIds.includes(r.id) && (
+                            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">BARU</span>
+                          )}
                           {it && <KindBadge k={it.kind} />}
                           <StatusPill s={r.status} />
                           <time className="text-xs text-mute">{fmtDate(r.at)}</time>
@@ -269,7 +291,13 @@ export default function VoterDashboard() {
                           <span className={`font-semibold ${r.reply ? 'text-emerald-700' : 'text-mute'}`}>
                             {r.reply ? '✓ Sudah dibalas pembuat link' : '○ Belum ada balasan'}
                           </span>
-                          <button className="font-semibold text-brand hover:underline" onClick={() => setOpenReplyId(open ? null : r.id)}>
+                          <button
+                            className="font-semibold text-brand hover:underline"
+                            onClick={() => {
+                              if (!open && r.reply) setSeenIds(markReplySeen(r.id))
+                              setOpenReplyId(open ? null : r.id)
+                            }}
+                          >
                             {open ? 'Tutup detail ↑' : 'Lihat detail balasan ↓'}
                           </button>
                         </div>

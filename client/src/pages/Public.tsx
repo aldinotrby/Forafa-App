@@ -6,6 +6,7 @@ import {
   loadVoter,
   maskPhone,
   requestOtp,
+  saveIdentity,
   saveVoter,
   validatePhone,
   verifyOtp,
@@ -264,7 +265,7 @@ function VerificationGate({ slug, onVerified, onAlreadyVoted }: {
               />
             </div>
           </Field>
-          <Btn className="w-full py-2.5" disabled={sending} onClick={sendOtp}>
+          <Btn type="button" className="w-full py-2.5" disabled={sending} onClick={sendOtp}>
             {sending ? 'Mengirim kode…' : 'Kirim kode OTP'}
           </Btn>
           <p className="text-center text-xs text-mute">Dengan melanjutkan, Anda menyetujui nomor ini dipakai hanya untuk verifikasi voting ini.</p>
@@ -299,7 +300,7 @@ function VerificationGate({ slug, onVerified, onAlreadyVoted }: {
                 : <>Kode demo dari server (provider mock): <b className="tabular-nums">{devOtp}</b>. Aktifkan provider WhatsApp (mis. Fonnte) agar kode terkirim sungguhan.</>}
             </p>
           )}
-          <Btn className="w-full py-2.5" disabled={verifying || remainingSeconds <= 0} onClick={verify}>
+          <Btn type="button" className="w-full py-2.5" disabled={verifying || remainingSeconds <= 0} onClick={verify}>
             {verifying ? 'Memverifikasi…' : 'Verifikasi kode'}
           </Btn>
           <div className="flex gap-2">
@@ -333,6 +334,9 @@ export default function Public({ slug }: { slug: string }) {
     return responses.some((r) => r.iid === found.id && r.voterKey === v.key) ? 'sudah' : 'isi'
   })
   const [alreadyMsg, setAlreadyMsg] = useState<string | null>(null)
+  /** Verifikasi opsional di form kritik & saran / pesan anonim (untuk riwayat). */
+  const [showVerifyBox, setShowVerifyBox] = useState(false)
+  const [verifyNotice, setVerifyNotice] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [choice, setChoice] = useState('')
   const [msg, setMsg] = useState('')
@@ -370,6 +374,7 @@ export default function Public({ slug }: { slug: string }) {
 
   const handleVerified = (v: VerifiedVoter) => {
     saveVoter(v)
+    saveIdentity(v)
     setVoter(v)
     setAlreadyMsg(null)
     if (it && responses.some((r) => r.iid === it.id && r.voterKey === v.key)) {
@@ -382,6 +387,15 @@ export default function Public({ slug }: { slug: string }) {
   const handleAlreadyVoted = (message: string) => {
     setAlreadyMsg(message)
     setPhase('sudah')
+  }
+
+  /** Verifikasi opsional (kritik & saran / anon): menautkan kiriman ke riwayat, tanpa memblokir pengisian. */
+  const handleOptionalVerified = (v: VerifiedVoter) => {
+    saveVoter(v)
+    saveIdentity(v)
+    setVoter(v)
+    setShowVerifyBox(false)
+    setVerifyNotice(null)
   }
 
   const changeVerification = () => {
@@ -444,8 +458,8 @@ export default function Public({ slug }: { slug: string }) {
       : {}
     if (multi) submit({ iid: it.id, choice: multiSummary(qs, answers), choices: { ...answers }, ...sender, ...voterInfo, verificationToken: voter?.token })
     else if (it.kind === 'vote') submit({ iid: it.id, choice, ...sender, ...voterInfo, verificationToken: voter?.token })
-    else if (it.kind === 'feedback') submit({ iid: it.id, message: topic ? `[${topic}] ${msg}` : msg, ...sender })
-    else submit({ iid: it.id, message: msg, anonymous: true })
+    else if (it.kind === 'feedback') submit({ iid: it.id, message: topic ? `[${topic}] ${msg}` : msg, ...sender, ...voterInfo, verificationToken: voter?.token })
+    else submit({ iid: it.id, message: msg, anonymous: true, ...voterInfo, verificationToken: voter?.token })
     setPhase('terkirim')
   }
 
@@ -541,6 +555,7 @@ export default function Public({ slug }: { slug: string }) {
                     </dl>
                   )}
                   <Btn variant="ghost" onClick={reset}>Kirim lagi</Btn>
+                  <a href="#/riwayat" className="block text-center text-sm font-semibold text-brand hover:underline">Lihat riwayat saya →</a>
                 </div>
               ) : phase === 'konfirmasi' ? (
                 <div className="space-y-5">
@@ -630,6 +645,30 @@ export default function Public({ slug }: { slug: string }) {
                     Status identitas: {identityStatus}
                   </p>
 
+                  {(it.kind === 'feedback' || it.kind === 'anon') && !voter && (
+                    <div className="space-y-3 rounded-xl border border-line bg-ground/60 p-4">
+                      {showVerifyBox ? (
+                        <>
+                          <p className="text-sm font-semibold">Verifikasi opsional — simpan ke riwayat saya</p>
+                          <VerificationGate slug={it.slug} onVerified={handleOptionalVerified} onAlreadyVoted={(msg) => setVerifyNotice(msg)} />
+                          <Btn type="button" variant="ghost" className="w-full py-2" onClick={() => setShowVerifyBox(false)}>Tutup tanpa verifikasi</Btn>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-semibold">Simpan ke riwayat saya? (opsional)</p>
+                          <p className="text-xs leading-relaxed text-mute">Verifikasi dengan Google atau WhatsApp OTP agar masukan ini tercatat di dashboard Riwayat Saya dan Anda bisa melihat status &amp; balasannya nanti.</p>
+                          {verifyNotice && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">{verifyNotice}</p>}
+                          <Btn type="button" variant="ghost" className="w-full py-2" onClick={() => setShowVerifyBox(true)}>Verifikasi identitas</Btn>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {(it.kind === 'feedback' || it.kind === 'anon') && voter && (
+                    <p className="flex items-center gap-2 rounded-lg bg-emerald-100 px-3 py-2 text-xs font-medium text-emerald-700" role="status">
+                      ✓ Terverifikasi · {voter.method === 'google' ? 'Google' : 'WhatsApp'} {voter.label} — kiriman ini tercatat di riwayat Anda.
+                    </p>
+                  )}
+
                   {!isAnon && <Field label="Nama"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} required placeholder="Nama Anda" /></Field>}
                   {multi ? (
                     <div className="space-y-4">
@@ -717,7 +756,11 @@ export default function Public({ slug }: { slug: string }) {
             </div>
           </Card>
         )}
-        <p className="mt-6 text-center text-xs text-mute"><a href="#/" className="font-semibold text-brand hover:underline">Buat interaksi Anda sendiri di Forafa-App</a></p>
+        <p className="mt-6 text-center text-xs text-mute">
+          <a href="#/riwayat" className="font-semibold text-brand hover:underline">Lihat riwayat pengisian saya</a>
+          {' · '}
+          <a href="#/" className="font-semibold text-brand hover:underline">Buat interaksi Anda sendiri di Forafa-App</a>
+        </p>
       </main>
     </div>
   )

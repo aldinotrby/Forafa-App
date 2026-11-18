@@ -212,6 +212,52 @@ function verifyDemo(demo: DemoSession, code: string): OtpVerifyResult {
   return { ok: true, verificationToken: `demo_${uid()}` }
 }
 
+/**
+ * Daftar identitas terverifikasi di perangkat ini (localStorage) — dipakai
+ * dashboard pengisi (`#/riwayat`) untuk menampilkan riwayat semua link yang
+ * pernah diisi identitas itu. Identitas ditambahkan otomatis setiap kali
+ * voter terverifikasi di link mana pun (Google / WhatsApp).
+ * Data contoh di bawah cocok dengan respons seed (Wati & Slamet) supaya
+ * dashboard langsung menampilkan riwayat saat pertama dibuka.
+ */
+const IDENTITY_KEY = 'fa_voter_identities'
+const SEED_IDENTITIES: VerifiedVoter[] = [
+  { method: 'whatsapp', key: 'wa:628123456789', label: '+62 812-****-789', verifiedAt: '2026-11-18T03:00:00.000Z', slug: 'pemilu-pengurus-rw05' },
+  { method: 'google', key: 'google:110012345678901234567', label: 's***@gmail.com', verifiedAt: '2026-11-18T02:00:00.000Z', slug: 'pemilu-pengurus-rw05' },
+]
+
+export function loadIdentities(): VerifiedVoter[] {
+  try {
+    const raw = localStorage.getItem(IDENTITY_KEY)
+    if (raw === null) {
+      localStorage.setItem(IDENTITY_KEY, JSON.stringify(SEED_IDENTITIES))
+      return [...SEED_IDENTITIES]
+    }
+    const list = JSON.parse(raw) as VerifiedVoter[]
+    return Array.isArray(list) ? list : []
+  } catch {
+    return []
+  }
+}
+
+export function saveIdentity(v: VerifiedVoter) {
+  const list = [v, ...loadIdentities().filter((x) => x.key !== v.key)]
+  try {
+    localStorage.setItem(IDENTITY_KEY, JSON.stringify(list))
+  } catch {
+    // Penyimpanan tidak tersedia — identitas hanya berlaku di sesi ini.
+  }
+}
+
+export function removeIdentity(key: string) {
+  const list = loadIdentities().filter((x) => x.key !== key)
+  try {
+    localStorage.setItem(IDENTITY_KEY, JSON.stringify(list))
+  } catch {
+    // Penyimpanan tidak tersedia — tidak ada yang perlu dihapus.
+  }
+}
+
 /** Voter terverifikasi disimpan di sessionStorage: tab ditutup → verifikasi hangus. */
 export function loadVoter(slug: string): VerifiedVoter | null {
   try {

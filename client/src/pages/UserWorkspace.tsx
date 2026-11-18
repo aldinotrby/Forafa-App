@@ -7,11 +7,11 @@ import { Bar, Btn, Card, Field, KIND, KindBadge, Logo, Paginated, QR, STATUSES, 
 
 type Nav = 'home' | Kind | 'flow' | 'notif'
 
-export default function UserWorkspace({ asUserId, onBack, adminBanner }: { asUserId?: string; onBack?: () => void; adminBanner?: string } = {}) {
+export default function UserWorkspace({ asUserId, onBack, adminBanner, initialOpenId }: { asUserId?: string; onBack?: () => void; adminBanner?: string; initialOpenId?: string } = {}) {
   const { user, logout, interactions } = useStore()
   const effectiveUserId = asUserId ?? user!.id
   const [nav, setNav] = useState<Nav>('home')
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null)
   const [creating, setCreating] = useState<Kind | null>(null)
   /** Id respons yang sudah dibaca owner (notifikasi masukan baru). */
   const [seenIds, setSeenIds] = useState<string[]>(() => loadSeenResponseIds())

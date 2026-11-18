@@ -1,21 +1,49 @@
-import { useState } from 'react'
-import { useStore, type User, type Kind } from '../services/store'
+import { useMemo, useState } from 'react'
+import { useStore, type Response, type User, type Kind } from '../services/store'
+import { loadSeenResponseIds, markResponseSeen, markResponsesSeen } from '../services/ownerNotifications'
 import UserWorkspace from './UserWorkspace'
 import { MediaUpload } from '../components/MediaUpload'
 import { SessionStatus } from '../components/SessionStatus'
 import { Btn, Card, Field, KIND, Logo, fmtDate, inputCls } from '../components/ui'
 
-type AdminNav = 'overview' | 'users'
+type AdminNav = 'overview' | 'users' | 'notif'
 
 const kindDot: Record<Kind, string> = { vote: 'bg-vote', feedback: 'bg-fb', anon: 'bg-anon' }
 
 export default function AdminDashboard() {
-  const { logout } = useStore()
+  const { logout, users, interactions, responses } = useStore()
   const [nav, setNav] = useState<AdminNav>('overview')
   const [viewingUser, setViewingUser] = useState<User | null>(null)
+  const [viewingOpenId, setViewingOpenId] = useState<string | null>(null)
+  /** Id respons yang sudah dibaca — dipakai bersama dengan workspace owner di perangkat ini. */
+  const [seenIds, setSeenIds] = useState<string[]>(() => loadSeenResponseIds())
+  /** Semua respons masuk yang belum dibaca, dari semua pengguna. */
+  const unseenAll = useMemo(
+    () => [...responses.filter((r) => !seenIds.includes(r.id))].sort((a, b) => +new Date(b.at) - +new Date(a.at)),
+    [responses, seenIds],
+  )
+
+  const openUserWorkspace = (u: User, openId?: string) => {
+    setViewingUser(u)
+    setViewingOpenId(openId ?? null)
+  }
+  /** Buka respons dari notifikasi: tandai dibaca lalu buka detail linknya di workspace pemiliknya. */
+  const openResponse = (r: Response) => {
+    const it = interactions.find((i) => i.id === r.iid)
+    const owner = it ? users.find((u) => u.id === it.ownerId) : undefined
+    setSeenIds(markResponseSeen(r.id))
+    if (owner) openUserWorkspace(owner, r.iid)
+  }
 
   if (viewingUser) {
-    return <UserWorkspace asUserId={viewingUser.id} onBack={() => setViewingUser(null)} adminBanner={viewingUser.username} />
+    return (
+      <UserWorkspace
+        asUserId={viewingUser.id}
+        initialOpenId={viewingOpenId ?? undefined}
+        onBack={() => { setViewingUser(null); setViewingOpenId(null) }}
+        adminBanner={viewingUser.username}
+      />
+    )
   }
 
   return (
@@ -34,10 +62,16 @@ export default function AdminDashboard() {
           {([
             { id: 'overview' as AdminNav, label: 'Ringkasan', icon: '▦' },
             { id: 'users' as AdminNav, label: 'Pengguna', icon: '◉' },
+            { id: 'notif' as AdminNav, label: 'Notifikasi', icon: '🔔' },
           ]).map((n) => (
             <button key={n.id} onClick={() => setNav(n.id)} aria-current={nav === n.id}
               className={`flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${nav === n.id ? 'bg-white/15 text-white' : 'text-white/60 hover:bg-white/10 hover:text-white'}`}>
               <span className="w-4 text-center text-base">{n.icon}</span>{n.label}
+              {n.id === 'notif' && unseenAll.length > 0 && (
+                <span className="ml-auto rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white" aria-label={`${unseenAll.length} notifikasi belum dibaca`}>
+                  {unseenAll.length > 9 ? '9+' : unseenAll.length}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -52,17 +86,28 @@ export default function AdminDashboard() {
 
       <main className="min-w-0 p-5 sm:p-8">
         {nav === 'overview'
-          ? <AdminOverview onViewUser={setViewingUser} />
-          : <AdminUsers onViewUser={setViewingUser} />
+          ? <AdminOverview onViewUser={(u) => openUserWorkspace(u)} seenIds={seenIds} />
+          : nav === 'users'
+            ? <AdminUsers onViewUser={(u) => openUserWorkspace(u)} seenIds={seenIds} />
+            : <AdminNotifications
+                unseen={unseenAll}
+                onOpenResponse={openResponse}
+                onMarkAll={() => setSeenIds(markResponsesSeen(unseenAll.map((r) => r.id)))}
+              />
         }
       </main>
     </div>
   )
 }
 
-function AdminOverview({ onViewUser }: { onViewUser: (u: User) => void }) {
+function AdminOverview({ onViewUser, seenIds }: { onViewUser: (u: User) => void; seenIds: string[] }) {
   const { users, interactions, responses } = useStore()
   const regularUsers = users.filter((u) => u.role === 'User')
+  /** Jumlah respons belum dibaca milik satu pengguna. */
+  const newCount = (uid: string) => {
+    const ids = new Set(interactions.filter((i) => i.ownerId === uid).map((i) => i.id))
+    return responses.filter((r) => ids.has(r.iid) && !seenIds.includes(r.id)).length
+  }
 
   const totalByKind = (k: Kind) => interactions.filter((i) => i.kind === k).length
   const respByKind = (k: Kind) => {
@@ -112,6 +157,7 @@ function AdminOverview({ onViewUser }: { onViewUser: (u: User) => void }) {
                 return (
                   <li key={r.id} className="flex items-center gap-3 py-3 text-sm">
                     <span className={`size-2.5 shrink-0 rounded-full ${kindDot[it.kind]}`} />
+                    {!seenIds.includes(r.id) && <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">BARU</span>}
                     <span className="min-w-0 flex-1 truncate">
                       <b>{r.name ?? 'Anonim'}</b>{' '}
                       {r.choice ? `memilih "${r.choice}"` : r.message ? `"${r.message.slice(0, 50)}${r.message.length > 50 ? '…' : ''}"` : ''}
@@ -139,6 +185,7 @@ function AdminOverview({ onViewUser }: { onViewUser: (u: User) => void }) {
                   const it = findInteraction(r.iid)
                   return it?.ownerId === u.id
                 }).length
+                const nNew = newCount(u.id)
                 return (
                   <li key={u.id} className="flex items-center gap-2.5 rounded-lg p-2 transition-colors hover:bg-ground">
                     <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-soft font-bold text-brand text-sm">
@@ -148,6 +195,7 @@ function AdminOverview({ onViewUser }: { onViewUser: (u: User) => void }) {
                       <p className="truncate text-sm font-semibold">{u.username}</p>
                       <p className="text-xs text-mute">{ic} interaksi · {rc} respons</p>
                     </div>
+                    {nNew > 0 && <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">{nNew} baru</span>}
                     <button className="shrink-0 text-xs font-semibold text-brand hover:underline" onClick={() => onViewUser(u)}>Buka</button>
                   </li>
                 )
@@ -160,7 +208,7 @@ function AdminOverview({ onViewUser }: { onViewUser: (u: User) => void }) {
   )
 }
 
-function AdminUsers({ onViewUser }: { onViewUser: (u: User) => void }) {
+function AdminUsers({ onViewUser, seenIds }: { onViewUser: (u: User) => void; seenIds: string[] }) {
   const { users, interactions, responses, adminCreateUser, updateUser, resetUserPassword, removeUser } = useStore()
   const [modal, setModal] = useState<null | { type: 'create' } | { type: 'edit'; user: User } | { type: 'reset'; user: User }>(null)
   const [q, setQ] = useState('')
@@ -174,6 +222,10 @@ function AdminUsers({ onViewUser }: { onViewUser: (u: User) => void }) {
   const respCount = (uid: string) => {
     const ids = new Set(interactions.filter((i) => i.ownerId === uid).map((i) => i.id))
     return responses.filter((r) => ids.has(r.iid)).length
+  }
+  const newCount = (uid: string) => {
+    const ids = new Set(interactions.filter((i) => i.ownerId === uid).map((i) => i.id))
+    return responses.filter((r) => ids.has(r.iid) && !seenIds.includes(r.id)).length
   }
 
   return (
@@ -199,6 +251,7 @@ function AdminUsers({ onViewUser }: { onViewUser: (u: User) => void }) {
                 <th className="px-5 py-3">Email</th>
                 <th className="px-5 py-3 text-center">Interaksi</th>
                 <th className="px-5 py-3 text-center">Respons</th>
+                <th className="px-5 py-3 text-center">Baru</th>
                 <th className="px-5 py-3 text-right">Aksi</th>
               </tr>
             </thead>
@@ -223,6 +276,13 @@ function AdminUsers({ onViewUser }: { onViewUser: (u: User) => void }) {
                   <td className="px-5 py-3.5 text-center">
                     <span className="font-semibold">{respCount(u.id)}</span>
                   </td>
+                  <td className="px-5 py-3.5 text-center">
+                    {newCount(u.id) > 0 ? (
+                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">{newCount(u.id)} baru</span>
+                    ) : (
+                      <span className="text-xs text-mute">—</span>
+                    )}
+                  </td>
                   <td className="px-5 py-3.5">
                     <div className="flex flex-wrap justify-end gap-1.5">
                       <Btn variant="ghost" className="px-2.5 py-1 text-xs" onClick={() => onViewUser(u)}>
@@ -245,7 +305,7 @@ function AdminUsers({ onViewUser }: { onViewUser: (u: User) => void }) {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-12 text-center text-mute">
+                  <td colSpan={6} className="px-5 py-12 text-center text-mute">
                     {q ? 'Tidak ada pengguna yang cocok.' : 'Belum ada pengguna terdaftar.'}
                   </td>
                 </tr>
@@ -275,6 +335,76 @@ function AdminUsers({ onViewUser }: { onViewUser: (u: User) => void }) {
           onSave={(pw) => { const err = resetUserPassword(modal.user.id, pw); if (!err) setModal(null); return err }}
         />
       )}
+    </div>
+  )
+}
+
+/**
+ * Halaman Notifikasi admin: respons masuk yang belum dibaca dari SEMUA
+ * pengguna di urutan teratas (dengan lencana BARU + nama pemilik link),
+ * lalu riwayat respons terbaru. Membuka sebuah respons menandainya dibaca
+ * dan membuka detail linknya di workspace pemiliknya.
+ *
+ * Status dibaca dipakai bersama dengan workspace owner di perangkat ini
+ * (kunci `fa_seen_responses` yang sama): menandai dibaca di sini juga
+ * menghilangkan lencana di workspace pemiliknya, begitu pula sebaliknya.
+ */
+function AdminNotifications({ unseen, onOpenResponse, onMarkAll }: {
+  unseen: Response[]
+  onOpenResponse: (r: Response) => void
+  onMarkAll: () => void
+}) {
+  const { users, interactions, responses } = useStore()
+  const findInteraction = (iid: string) => interactions.find((i) => i.id === iid)
+  const unseenIds = new Set(unseen.map((r) => r.id))
+  const shown = [
+    ...unseen,
+    ...[...responses].sort((a, b) => +new Date(b.at) - +new Date(a.at)).filter((r) => !unseenIds.has(r.id)),
+  ].slice(0, 12)
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest text-brand">Administrator</p>
+          <h1 className="font-display text-4xl font-extrabold tracking-tight">Masukan baru — semua pengguna</h1>
+          <p className="mt-1 text-sm text-mute">
+            {unseen.length > 0 ? `${unseen.length} respons belum dibaca di semua link pengguna.` : 'Semua respons sudah dibaca.'}
+          </p>
+        </div>
+        {unseen.length > 0 && <Btn variant="ghost" onClick={onMarkAll}>Tandai semua sudah dibaca</Btn>}
+      </header>
+
+      {shown.length === 0 ? (
+        <Card className="p-10 text-center text-sm text-mute">Belum ada aktivitas di link pengguna mana pun.</Card>
+      ) : (
+        <Card className="divide-y divide-line px-5">
+          {shown.map((r) => {
+            const it = findInteraction(r.iid)
+            if (!it) return null
+            const owner = users.find((u) => u.id === it.ownerId)
+            const isNew = unseenIds.has(r.id)
+            return (
+              <div key={r.id} className="flex flex-wrap items-center gap-3 py-4 text-sm">
+                <span className={`size-2.5 shrink-0 rounded-full ${kindDot[it.kind]}`} aria-hidden />
+                {isNew && <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">BARU</span>}
+                <span className="min-w-0 flex-1 truncate">
+                  <b>{r.name ?? 'Anonim'}</b>{' '}
+                  {r.choice ? `memilih ${r.choice}` : r.message ? `menulis: ${r.message}` : ''}
+                </span>
+                <span className="shrink-0 rounded-full bg-ground px-2 py-0.5 text-xs font-semibold text-mute">
+                  {owner?.username ?? '—'}
+                </span>
+                <button className="shrink-0 text-xs font-semibold text-brand hover:underline" onClick={() => onOpenResponse(r)}>{it.title}</button>
+                <time className="shrink-0 text-xs text-mute">{fmtDate(r.at)}</time>
+              </div>
+            )
+          })}
+        </Card>
+      )}
+      <p className="text-xs text-mute">
+        Notifikasi dihitung dari perangkat &amp; browser ini saja — respons yang masuk saat dasbor tidak dibuka akan muncul sebagai baru saat dibuka lagi.
+      </p>
     </div>
   )
 }

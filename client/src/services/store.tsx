@@ -39,6 +39,20 @@ export interface SessionHistory {
   /** Terakhir kali pengguna logout (ISO). */
   lastLogoutAt: string | null
 }
+/** Satu pilihan kandidat di dalam satu pertanyaan voting multi-pertanyaan. */
+export interface VoteOption {
+  label: string
+  /** false = pilihan nonaktif: tampil tapi tidak bisa dipilih pengunjung. */
+  active: boolean
+}
+/** Satu pertanyaan dalam voting multi-pertanyaan (mis. Ketua, Wakil Ketua). */
+export interface VoteQuestion {
+  id: string
+  title: string
+  /** false = pertanyaan nonaktif: disembunyikan dari pengunjung & tidak dihitung progres. */
+  active: boolean
+  options: VoteOption[]
+}
 export interface Interaction {
   id: string
   ownerId: string
@@ -50,6 +64,13 @@ export interface Interaction {
   start: string
   end: string
   options: string[]
+  /**
+   * Hanya untuk voting multi-pertanyaan: daftar pertanyaan dalam satu link.
+   * Bila kosong/undefined, voting berlaku seperti dulu — satu pertanyaan
+   * dengan `options`. `options` tetap diisi gabungan semua label pilihan
+   * agar data lama, backend, dan CSV tetap bisa membaca voting ini.
+   */
+  questions?: VoteQuestion[]
   createdAt: string
   banner?: string
 }
@@ -58,6 +79,8 @@ export interface Response {
   iid: string
   name?: string
   choice?: string
+  /** Voting multi-pertanyaan: jawaban per pertanyaan (id pertanyaan → label pilihan). `choice` tetap diisi ringkasannya. */
+  choices?: Record<string, string>
   message?: string
   status: Status
   reply?: string
@@ -138,6 +161,18 @@ const seedInteractions: Interaction[] = [
   { id: 'i3', ownerId: 'u2', kind: 'anon', title: 'Kotak suara warga', description: 'Tulis apa saja tanpa menampilkan identitas Anda.', slug: 'kotak-suara', active: true, start: day(-30), end: day(60), options: [], createdAt: ago(400) },
   { id: 'i4', ownerId: 'u3', kind: 'vote', title: 'Pilih ketua RT baru', description: 'Pemilihan ketua RT periode 2026-2028.', slug: 'pilih-ketua-rt', active: true, start: day(-1), end: day(7), options: ['Pak Suryo', 'Bu Ratna', 'Pak Hasan'], createdAt: ago(24) },
   { id: 'i5', ownerId: 'u3', kind: 'feedback', title: 'Masukan kebersihan lingkungan', description: 'Sampaikan saran untuk program kebersihan RW.', slug: 'kebersihan-rw', active: true, start: day(-5), end: day(25), options: ['Jadwal', 'Peralatan', 'Petugas'], createdAt: ago(120) },
+  {
+    id: 'i6', ownerId: 'u3', kind: 'vote', title: 'Pemilihan pengurus RW 05', description: 'Satu link untuk memilih Ketua, Wakil Ketua, Sekretaris, dan Bendahara periode 2026-2028.',
+    slug: 'pemilu-pengurus-rw05', active: true, start: day(-1), end: day(7),
+    options: ['Pak Suryo', 'Bu Ratna', 'Pak Hasan', 'Dewi Lestari', 'Agus Santoso', 'Maya Putri', 'Rizal Fahmi', 'Sari Wulandari', 'Hendra Gunawan'],
+    questions: [
+      { id: 'q1', title: 'Ketua', active: true, options: [{ label: 'Pak Suryo', active: true }, { label: 'Bu Ratna', active: true }, { label: 'Pak Hasan', active: true }] },
+      { id: 'q2', title: 'Wakil Ketua', active: true, options: [{ label: 'Dewi Lestari', active: true }, { label: 'Agus Santoso', active: true }] },
+      { id: 'q3', title: 'Sekretaris', active: true, options: [{ label: 'Maya Putri', active: true }, { label: 'Rizal Fahmi', active: false }] },
+      { id: 'q4', title: 'Bendahara', active: true, options: [{ label: 'Sari Wulandari', active: true }, { label: 'Hendra Gunawan', active: true }] },
+    ],
+    createdAt: ago(10),
+  },
 ]
 
 const names = ['Budi', 'Sari', 'Dewi', 'Agus', 'Maya', 'Hendra', 'Lina', 'Rizal', 'Tono', 'Putri', 'Yoga', 'Nia']
@@ -149,6 +184,8 @@ const seedResponses: Response[] = [
   { id: 'f4', iid: 'i2', name: 'Joko', message: 'Tolong tambah papan informasi jadwal imunisasi.', status: 'Diproses', reply: 'Sedang kami siapkan minggu ini.', at: ago(90) },
   { id: 'a1', iid: 'i3', message: 'Lampu jalan di gang mawar sudah seminggu mati.', status: 'Baru', at: ago(4) },
   { id: 'a2', iid: 'i3', message: 'Iuran kebersihan sebaiknya dilaporkan terbuka tiap bulan.', status: 'Dibaca', at: ago(30) },
+  { id: 'v30', iid: 'i6', name: 'Wati', choice: 'Ketua: Bu Ratna; Wakil Ketua: Dewi Lestari; Sekretaris: Maya Putri; Bendahara: Sari Wulandari', choices: { q1: 'Bu Ratna', q2: 'Dewi Lestari', q3: 'Maya Putri', q4: 'Sari Wulandari' }, status: 'Baru', at: ago(2) },
+  { id: 'v31', iid: 'i6', name: 'Slamet', choice: 'Ketua: Pak Suryo; Wakil Ketua: Agus Santoso; Sekretaris: Maya Putri; Bendahara: Hendra Gunawan', choices: { q1: 'Pak Suryo', q2: 'Agus Santoso', q3: 'Maya Putri', q4: 'Hendra Gunawan' }, status: 'Baru', at: ago(4) },
   { id: 'v20', iid: 'i4', name: 'Wati', choice: 'Bu Ratna', status: 'Baru', at: ago(3) },
   { id: 'v21', iid: 'i4', name: 'Slamet', choice: 'Pak Suryo', status: 'Baru', at: ago(5) },
   { id: 'v22', iid: 'i4', name: 'Dwi', choice: 'Bu Ratna', status: 'Baru', at: ago(8) },
@@ -178,20 +215,46 @@ const apiCall = async (path: string, options: RequestInit = {}) => {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const normalizeInteraction = (raw: any): Interaction => ({
-  id: String(raw.id),
-  ownerId: String(raw.ownerId || raw.owner_id || ''),
-  kind: raw.kind as Kind,
-  title: String(raw.title || ''),
-  description: String(raw.description || ''),
-  slug: String(raw.slug || ''),
-  active: Boolean(raw.active),
-  start: String(raw.start || ''),
-  end: String(raw.end || ''),
-  options: Array.isArray(raw.options) ? raw.options : typeof raw.options === 'string' ? JSON.parse(raw.options) : [],
-  createdAt: String(raw.createdAt || raw.created_at || new Date().toISOString()),
-  banner: raw.banner,
+const normalizeVoteOption = (o: any): VoteOption =>
+  typeof o === 'string' ? { label: o, active: true } : { label: String(o?.label ?? o?.name ?? ''), active: o?.active !== false }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const normalizeVoteQuestion = (q: any, idx: number): VoteQuestion => ({
+  id: String(q?.id ?? `q${idx + 1}`),
+  title: String(q?.title ?? q?.question ?? ''),
+  active: q?.active !== false,
+  options: Array.isArray(q?.options) ? q.options.map(normalizeVoteOption).filter((x: VoteOption) => x.label) : [],
 })
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const parseQuestions = (raw: any): VoteQuestion[] | undefined => {
+  const src = raw.questions ?? raw.pertanyaan
+  if (!src) return undefined
+  const arr = typeof src === 'string' ? JSON.parse(src) : src
+  if (!Array.isArray(arr)) return undefined
+  const list = arr.map(normalizeVoteQuestion).filter((x) => x.title)
+  return list.length ? list : undefined
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const normalizeInteraction = (raw: any): Interaction => {
+  const rawOptions: unknown[] = Array.isArray(raw.options) ? raw.options : typeof raw.options === 'string' ? JSON.parse(raw.options) : []
+  return {
+    id: String(raw.id),
+    ownerId: String(raw.ownerId || raw.owner_id || ''),
+    kind: raw.kind as Kind,
+    title: String(raw.title || ''),
+    description: String(raw.description || ''),
+    slug: String(raw.slug || ''),
+    active: Boolean(raw.active),
+    start: String(raw.start || ''),
+    end: String(raw.end || ''),
+    options: rawOptions.map((o) => (typeof o === 'string' ? o : String((o as { label?: unknown })?.label ?? ''))).filter(Boolean),
+    questions: parseQuestions(raw),
+    createdAt: String(raw.createdAt || raw.created_at || new Date().toISOString()),
+    banner: raw.banner,
+  }
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const normalizeResponse = (raw: any): Response => ({
@@ -199,6 +262,7 @@ const normalizeResponse = (raw: any): Response => ({
   iid: String(raw.iid || raw.interaction_id || ''),
   name: raw.name || undefined,
   choice: raw.choice || undefined,
+  choices: raw.choices ? (typeof raw.choices === 'string' ? JSON.parse(raw.choices) : raw.choices) : undefined,
   message: raw.message || undefined,
   status: (raw.status as Status) || 'Baru',
   reply: raw.reply || undefined,
@@ -501,6 +565,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             start: n.start,
             end: n.end,
             options: n.options,
+            questions: n.questions,
             active: n.active,
           }),
         })
@@ -535,6 +600,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             body: JSON.stringify({
               name: r.name,
               choice: r.choice,
+              choices: r.choices,
               message: r.message,
             }),
           })

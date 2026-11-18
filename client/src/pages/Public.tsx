@@ -1,11 +1,56 @@
 import { useState } from 'react'
-import { useStore } from '../services/store'
+import { useStore, type Interaction, type VoteQuestion } from '../services/store'
 import { Btn, Card, Field, KIND, KindBadge, Logo, inputCls } from '../components/ui'
 
 /** Cara pengunjung mengidentifikasi diri saat mengisi form publik. */
 type Identity = 'nama' | 'anon'
 /** Tahap pengisian: isi form → konfirmasi → terkirim. */
 type Phase = 'isi' | 'konfirmasi' | 'terkirim'
+/** Tampilan voting multi-pertanyaan: satu pertanyaan per halaman, atau semuanya sekaligus. */
+type MultiView = 'page' | 'all'
+
+/** Voting multi-pertanyaan = kind 'vote' yang punya daftar `questions`. */
+const isMulti = (it: Interaction | undefined) => !!it && it.kind === 'vote' && (it.questions?.length ?? 0) > 0
+/** Pertanyaan yang tampil ke pengunjung: aktif dan punya minimal satu pilihan aktif. */
+const flowQuestions = (it: Interaction | undefined): VoteQuestion[] =>
+  (it?.questions ?? []).filter((q) => q.active && q.options.some((o) => o.active))
+const multiSummary = (qs: VoteQuestion[], answers: Record<string, string>) =>
+  qs.map((q) => `${q.title}: ${answers[q.id] ?? '—'}`).join('; ')
+
+function QuestionBlock({ q, num, value, onPick }: { q: VoteQuestion; num: number; value: string; onPick: (label: string) => void }) {
+  return (
+    <fieldset className="space-y-2">
+      <legend className="mb-1 text-xs font-semibold uppercase tracking-wider text-mute">
+        Pertanyaan {num} — {q.title}
+      </legend>
+      {q.options.map((o) => (
+        <label
+          key={o.label}
+          className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition-colors ${
+            !o.active
+              ? 'cursor-not-allowed border-line bg-ground text-mute opacity-70'
+              : value === o.label
+                ? 'border-vote bg-vote-soft'
+                : 'border-line hover:bg-ground'
+          }`}
+        >
+          <input
+            type="radio"
+            name={`q-${q.id}`}
+            className="accent-vote"
+            checked={value === o.label}
+            disabled={!o.active}
+            onChange={() => onPick(o.label)}
+            required
+          />
+          <span className="flex-1">{o.label}</span>
+          {!o.active && <span className="rounded-full bg-ground px-2 py-0.5 text-xs font-semibold text-mute">Nonaktif</span>}
+          {o.active && value === o.label && <span className="text-xs font-bold text-vote">✓ Dipilih</span>}
+        </label>
+      ))}
+    </fieldset>
+  )
+}
 
 export default function Public({ slug }: { slug: string }) {
   const { interactions, submit } = useStore()
@@ -16,6 +61,11 @@ export default function Public({ slug }: { slug: string }) {
   const [topic, setTopic] = useState('')
   const [identity, setIdentity] = useState<Identity>('nama')
   const [phase, setPhase] = useState<Phase>('isi')
+  /** Jawaban voting multi-pertanyaan: id pertanyaan → label pilihan. */
+  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [view, setView] = useState<MultiView>('page')
+  const [step, setStep] = useState(0)
+  const [warn, setWarn] = useState('')
 
   const today = new Date().toISOString().slice(0, 10)
   const closed = !!it && (!it.active || (it.start && today < it.start) || (it.end && today > it.end))
@@ -25,18 +75,66 @@ export default function Public({ slug }: { slug: string }) {
   const effectiveIdentity: Identity = forcedAnon ? 'anon' : identity
   const isAnon = effectiveIdentity === 'anon'
 
+  const multi = isMulti(it)
+  const qs = flowQuestions(it)
+  const hiddenCount = (it?.questions?.length ?? 0) - qs.length
+  const answeredCount = qs.filter((q) => answers[q.id]).length
+  const cur = qs[Math.min(step, Math.max(0, qs.length - 1))]
+  const progressPct = qs.length ? Math.round((answeredCount / qs.length) * 100) : 0
+
+  /** Pertanyaan pertama yang belum dijawab (untuk lompat & pesan). */
+  const firstUnanswered = () => qs.findIndex((q) => !answers[q.id])
+
   /** Membuka tahap konfirmasi — jawaban belum dikirim pada tahap ini. */
   const review = (e: React.FormEvent) => {
     e.preventDefault()
     if (!it) return
+    if (multi && qs.length === 0) {
+      setWarn('Semua pertanyaan di voting ini sedang nonaktif.')
+      return
+    }
+    if (multi) {
+      const missing = firstUnanswered()
+      if (missing >= 0) {
+        setWarn(`Pertanyaan "${qs[missing].title}" belum dijawab.`)
+        setStep(missing)
+        setView('page')
+        return
+      }
+    }
+    setWarn('')
     setPhase('konfirmasi')
+  }
+
+  /** Tombol "Periksa & kirim" di halaman terakhir tampilan multi-page. */
+  const goReview = () => {
+    if (!it) return
+    const missing = firstUnanswered()
+    if (missing >= 0) {
+      setWarn(`Pertanyaan "${qs[missing].title}" belum dijawab.`)
+      setStep(missing)
+      return
+    }
+    setWarn('')
+    setPhase('konfirmasi')
+  }
+
+  const next = () => {
+    if (!cur) return
+    if (!answers[cur.id]) {
+      setWarn(`Pilih dulu jawaban untuk "${cur.title}" sebelum lanjut.`)
+      return
+    }
+    setWarn('')
+    setStep((s) => Math.min(s + 1, qs.length - 1))
   }
 
   /** Mengirim jawaban setelah pengguna menekan "Ya, kirim jawaban" di tahap konfirmasi. */
   const send = () => {
     if (!it) return
     const sender = isAnon ? { anonymous: true as const } : { name: name.trim(), anonymous: false as const }
-    if (it.kind === 'vote') submit({ iid: it.id, choice, ...sender })
+    if (multi) submit({ iid: it.id, choice: multiSummary(qs, answers), choices: { ...answers }, ...sender })
+    else if (it.kind === 'vote') submit({ iid: it.id, choice, ...sender })
     else if (it.kind === 'feedback') submit({ iid: it.id, message: topic ? `[${topic}] ${msg}` : msg, ...sender })
     else submit({ iid: it.id, message: msg, anonymous: true })
     setPhase('terkirim')
@@ -49,6 +147,10 @@ export default function Public({ slug }: { slug: string }) {
     setMsg('')
     setTopic('')
     setIdentity('nama')
+    setAnswers({})
+    setStep(0)
+    setView('page')
+    setWarn('')
   }
 
   const m = it && KIND[it.kind]
@@ -87,6 +189,16 @@ export default function Public({ slug }: { slug: string }) {
                   <p className="text-sm text-brand/80" role="status">
                     {isAnon ? 'Terkirim sebagai Anonymous — identitas Anda tidak tercatat.' : `Terkirim atas nama ${name.trim()}.`}
                   </p>
+                  {multi && (
+                    <dl className="space-y-1.5 rounded-xl bg-white/70 p-4 text-left text-sm">
+                      {qs.map((q) => (
+                        <div key={q.id} className="flex justify-between gap-4">
+                          <dt className="text-mute">{q.title}</dt>
+                          <dd className="font-semibold">{answers[q.id]}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
                   <Btn variant="ghost" onClick={reset}>Kirim lagi</Btn>
                 </div>
               ) : phase === 'konfirmasi' ? (
@@ -100,12 +212,19 @@ export default function Public({ slug }: { slug: string }) {
                       <dt className="shrink-0 font-semibold text-mute">Identitas</dt>
                       <dd className="text-right font-semibold">{isAnon ? '◌ Anonymous' : `👤 Nama asli — ${name.trim()}`}</dd>
                     </div>
-                    {it.kind === 'vote' && (
+                    {multi ? (
+                      qs.map((q) => (
+                        <div key={q.id} className="flex justify-between gap-4">
+                          <dt className="shrink-0 font-semibold text-mute">{q.title}</dt>
+                          <dd className="text-right font-semibold text-vote">{answers[q.id]}</dd>
+                        </div>
+                      ))
+                    ) : it.kind === 'vote' ? (
                       <div className="flex justify-between gap-4">
                         <dt className="shrink-0 font-semibold text-mute">Pilihan Anda</dt>
                         <dd className="text-right font-semibold text-vote">{choice}</dd>
                       </div>
-                    )}
+                    ) : null}
                     {it.kind === 'feedback' && (
                       <div className="flex justify-between gap-4">
                         <dt className="shrink-0 font-semibold text-mute">Topik</dt>
@@ -165,7 +284,70 @@ export default function Public({ slug }: { slug: string }) {
                   </p>
 
                   {!isAnon && <Field label="Nama"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} required placeholder="Nama Anda" /></Field>}
-                  {it.kind === 'vote' && (
+                  {multi ? (
+                    <div className="space-y-4">
+                      {/* Progres pengisian */}
+                      <div className="space-y-2" aria-live="polite">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-semibold">Pertanyaan {view === 'page' ? `${step + 1} dari ${qs.length}` : `1–${qs.length} dari ${qs.length}`}</span>
+                          <span className="tabular-nums text-mute">{answeredCount} dari {qs.length} terisi · {progressPct}%</span>
+                        </div>
+                        <div className="h-2.5 overflow-hidden rounded-full bg-ground" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
+                          <div className="h-full rounded-full bg-vote transition-all duration-300" style={{ width: `${progressPct}%` }} />
+                        </div>
+                        {hiddenCount > 0 && <p className="text-xs text-mute">{hiddenCount} pertanyaan sedang nonaktif dan disembunyikan.</p>}
+                      </div>
+
+                      {/* Pilihan tampilan: multi-page atau single-page */}
+                      <div className="flex gap-2" role="group" aria-label="Tampilan voting">
+                        <Btn type="button" variant={view === 'page' ? 'primary' : 'ghost'} className="flex-1 py-2" onClick={() => setView('page')}>▦ Satu per halaman</Btn>
+                        <Btn type="button" variant={view === 'all' ? 'primary' : 'ghost'} className="flex-1 py-2" onClick={() => setView('all')}>☰ Semua sekaligus</Btn>
+                      </div>
+
+                      {/* Navigasi antarpertanyaan */}
+                      <nav className="flex flex-wrap gap-2" aria-label="Navigasi pertanyaan">
+                        {qs.map((q, i) => (
+                          <button
+                            key={q.id}
+                            type="button"
+                            onClick={() => { setStep(i); setWarn('') }}
+                            aria-current={view === 'page' && step === i}
+                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                              view === 'page' && step === i
+                                ? 'border-vote bg-vote text-white'
+                                : answers[q.id]
+                                  ? 'border-vote/40 bg-vote-soft text-vote'
+                                  : 'border-line bg-white text-mute hover:bg-ground'
+                            }`}
+                          >
+                            {answers[q.id] ? '✓ ' : ''}{i + 1}. {q.title}
+                          </button>
+                        ))}
+                      </nav>
+
+                      {warn && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700" role="alert">{warn}</p>}
+
+                      {view === 'page' && cur ? (
+                        <div className="space-y-4">
+                          <QuestionBlock q={cur} num={step + 1} value={answers[cur.id] ?? ''} onPick={(label) => { setAnswers((p) => ({ ...p, [cur.id]: label })); setWarn('') }} />
+                          <div className="flex gap-2">
+                            <Btn type="button" variant="ghost" className="flex-1 py-2.5" disabled={step === 0} onClick={() => { setStep((s) => Math.max(0, s - 1)); setWarn('') }}>← Sebelumnya</Btn>
+                            {step < qs.length - 1 ? (
+                              <Btn type="button" className={`flex-1 py-2.5 ${m!.bg} hover:opacity-90`} onClick={next}>Lanjut →</Btn>
+                            ) : (
+                              <Btn type="button" className={`flex-1 py-2.5 ${m!.bg} hover:opacity-90`} onClick={goReview}>Periksa &amp; kirim</Btn>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-5">
+                          {qs.map((q, i) => (
+                            <QuestionBlock key={q.id} q={q} num={i + 1} value={answers[q.id] ?? ''} onPick={(label) => { setAnswers((p) => ({ ...p, [q.id]: label })); setWarn('') }} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : it.kind === 'vote' ? (
                     <fieldset className="space-y-2">
                       <legend className="mb-1 text-xs font-semibold uppercase tracking-wider text-mute">Pilih salah satu</legend>
                       {it.options.map((o) => (
@@ -174,12 +356,14 @@ export default function Public({ slug }: { slug: string }) {
                         </label>
                       ))}
                     </fieldset>
-                  )}
+                  ) : null}
                   {it.kind === 'feedback' && it.options.length > 0 && (
                     <Field label="Topik"><select className={inputCls} value={topic} onChange={(e) => setTopic(e.target.value)}><option value="">Umum</option>{it.options.map((o) => <option key={o}>{o}</option>)}</select></Field>
                   )}
                   {it.kind !== 'vote' && <Field label={it.kind === 'anon' ? 'Tulis pesan' : 'Kritik / saran'} hint={isAnon ? 'Anda mengisi sebagai Anonymous — nama Anda tidak dicatat.' : undefined}><textarea className={inputCls} rows={5} value={msg} onChange={(e) => setMsg(e.target.value)} required /></Field>}
-                  <Btn className={`w-full py-2.5 ${m!.bg} hover:opacity-90`}>{it.kind === 'vote' ? 'Periksa & kirim vote' : 'Periksa & kirim'}</Btn>
+                  {(!multi || view === 'all' || qs.length === 0) && (
+                    <Btn className={`w-full py-2.5 ${m!.bg} hover:opacity-90`}>{it.kind === 'vote' ? 'Periksa & kirim vote' : 'Periksa & kirim'}</Btn>
+                  )}
                   <p className="text-center text-xs text-mute">Anda akan diminta konfirmasi sebelum jawaban benar-benar terkirim.</p>
                 </form>
               )}

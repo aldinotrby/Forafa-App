@@ -1,12 +1,16 @@
 -- ==============================================================================
 -- Forafa-App Database Schema & Initial Seed Data (MySQL)
 -- ==============================================================================
-
-CREATE DATABASE IF NOT EXISTS `forafa_db` 
-CHARACTER SET utf8mb4 
-COLLATE utf8mb4_unicode_ci;
-
-USE `forafa_db`;
+--
+-- CATATAN: file ini TIDAK lagi membuat/memilih database sendiri.
+-- Nama database berasal dari DB_DATABASE di server/.env (default
+-- 'forafa_db', lihat server/src/config/config.php). setup.php sudah
+-- membuat database itu (bila belum ada) dan memilihnya sebelum
+-- mengeksekusi file ini, jadi jalankan selalu lewat setup.php:
+--   php server/setup.php
+-- Bila file ini diimpor manual (mysql < database.sql), pilih dulu
+-- database tujuannya, mis. USE `nama_db`; tanpa itu impor gagal
+-- dengan "No database selected".
 
 -- ------------------------------------------------------------------------------
 -- Table Cleanup

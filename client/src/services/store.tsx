@@ -92,6 +92,16 @@ export interface Response {
    * Untuk interaksi jenis 'anon' kolom ini selalu dianggap true.
    */
   anonymous?: boolean
+  /**
+   * Identitas terverifikasi pengirim voting (1 akun/nomor = 1 suara):
+   * `google:<sub>` atau `wa:<nomor62>`. Dipakai untuk menampilkan pesan
+   * "sudah pernah voting" bila identitas yang sama mengisi lagi.
+   */
+  voterKey?: string
+  /** Cara voter terverifikasi: Google atau OTP WhatsApp. */
+  verifiedVia?: 'google' | 'whatsapp'
+  /** Label tampil identitas terverifikasi (email / nomor tersamarkan). */
+  verificationLabel?: string
 }
 
 interface Store {
@@ -119,7 +129,8 @@ interface Store {
   addInteraction: (i: Omit<Interaction, 'id' | 'ownerId' | 'slug' | 'createdAt'>, ownerIdOverride?: string) => Interaction
   updateInteraction: (id: string, patch: Partial<Interaction>) => void
   removeInteraction: (id: string) => void
-  submit: (r: Omit<Response, 'id' | 'at' | 'status'>) => void
+  /** verificationToken (OTP WhatsApp, 15 menit) ikut terkirim ke backend tapi TIDAK disimpan lokal. */
+  submit: (r: Omit<Response, 'id' | 'at' | 'status'> & { verificationToken?: string }) => void
   patchResponse: (id: string, patch: Partial<Response>) => void
   removeResponse: (id: string) => void
 }
@@ -184,8 +195,8 @@ const seedResponses: Response[] = [
   { id: 'f4', iid: 'i2', name: 'Joko', message: 'Tolong tambah papan informasi jadwal imunisasi.', status: 'Diproses', reply: 'Sedang kami siapkan minggu ini.', at: ago(90) },
   { id: 'a1', iid: 'i3', message: 'Lampu jalan di gang mawar sudah seminggu mati.', status: 'Baru', at: ago(4) },
   { id: 'a2', iid: 'i3', message: 'Iuran kebersihan sebaiknya dilaporkan terbuka tiap bulan.', status: 'Dibaca', at: ago(30) },
-  { id: 'v30', iid: 'i6', name: 'Wati', choice: 'Ketua: Bu Ratna; Wakil Ketua: Dewi Lestari; Sekretaris: Maya Putri; Bendahara: Sari Wulandari', choices: { q1: 'Bu Ratna', q2: 'Dewi Lestari', q3: 'Maya Putri', q4: 'Sari Wulandari' }, status: 'Baru', at: ago(2) },
-  { id: 'v31', iid: 'i6', name: 'Slamet', choice: 'Ketua: Pak Suryo; Wakil Ketua: Agus Santoso; Sekretaris: Maya Putri; Bendahara: Hendra Gunawan', choices: { q1: 'Pak Suryo', q2: 'Agus Santoso', q3: 'Maya Putri', q4: 'Hendra Gunawan' }, status: 'Baru', at: ago(4) },
+  { id: 'v30', iid: 'i6', name: 'Wati', choice: 'Ketua: Bu Ratna; Wakil Ketua: Dewi Lestari; Sekretaris: Maya Putri; Bendahara: Sari Wulandari', choices: { q1: 'Bu Ratna', q2: 'Dewi Lestari', q3: 'Maya Putri', q4: 'Sari Wulandari' }, voterKey: 'wa:628123456789', verifiedVia: 'whatsapp', verificationLabel: '+62 812-****-789', status: 'Baru', at: ago(2) },
+  { id: 'v31', iid: 'i6', name: 'Slamet', choice: 'Ketua: Pak Suryo; Wakil Ketua: Agus Santoso; Sekretaris: Maya Putri; Bendahara: Hendra Gunawan', choices: { q1: 'Pak Suryo', q2: 'Agus Santoso', q3: 'Maya Putri', q4: 'Hendra Gunawan' }, voterKey: 'google:110012345678901234567', verifiedVia: 'google', verificationLabel: 's***@gmail.com', status: 'Baru', at: ago(4) },
   { id: 'v20', iid: 'i4', name: 'Wati', choice: 'Bu Ratna', status: 'Baru', at: ago(3) },
   { id: 'v21', iid: 'i4', name: 'Slamet', choice: 'Pak Suryo', status: 'Baru', at: ago(5) },
   { id: 'v22', iid: 'i4', name: 'Dwi', choice: 'Bu Ratna', status: 'Baru', at: ago(8) },
@@ -269,6 +280,9 @@ const normalizeResponse = (raw: any): Response => ({
   shared: Boolean(raw.shared),
   at: String(raw.at || raw.created_at || new Date().toISOString()),
   anonymous: raw.anonymous ? true : undefined,
+  voterKey: raw.voterKey || raw.voter_key || undefined,
+  verifiedVia: raw.verifiedVia || raw.verified_via || undefined,
+  verificationLabel: raw.verificationLabel || raw.verification_label || undefined,
 })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -589,7 +603,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         apiCall(`/interactions/${id}`, { method: 'DELETE' })
       },
       submit: (r) => {
-        const n: Response = { ...r, id: uid(), status: 'Baru', at: new Date().toISOString() }
+        const { verificationToken, ...rest } = r
+        const n: Response = { ...rest, id: uid(), status: 'Baru', at: new Date().toISOString() }
         setResponses((p) => [n, ...p])
 
         // Asynchronously submit through backend public portal
@@ -598,10 +613,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           apiCall(`/public/${targetInter.slug}/submit`, {
             method: 'POST',
             body: JSON.stringify({
-              name: r.name,
-              choice: r.choice,
-              choices: r.choices,
-              message: r.message,
+              name: rest.name,
+              choice: rest.choice,
+              choices: rest.choices,
+              message: rest.message,
+              verification: rest.voterKey
+                ? { type: rest.verifiedVia, identifier: rest.voterKey, token: verificationToken }
+                : undefined,
             }),
           })
         }

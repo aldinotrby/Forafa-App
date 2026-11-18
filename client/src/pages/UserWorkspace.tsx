@@ -455,6 +455,15 @@ function Stats({ it, rs }: { it: Interaction; rs: Response[] }) {
   )
 }
 
+function VerifiedChip({ r }: { r: Response }) {
+  if (!r.verifiedVia) return null
+  return (
+    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700" title={r.verificationLabel}>
+      ✓ {r.verifiedVia === 'google' ? 'Google' : 'WhatsApp'}{r.verificationLabel ? ` · ${r.verificationLabel}` : ''}
+    </span>
+  )
+}
+
 function Responses({ it, rs }: { it: Interaction; rs: Response[] }) {
   const { patchResponse, removeResponse } = useStore()
   const [q, setQ] = useState('')
@@ -474,8 +483,9 @@ function Responses({ it, rs }: { it: Interaction; rs: Response[] }) {
       </div>
       <Paginated items={list} render={(r) => it.kind === 'vote' && it.questions?.length ? (
         <div key={r.id} className="space-y-2 py-3 text-sm">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="flex-1 font-semibold">{r.name ?? 'Anonim'}{r.anonymous && <span className="ml-2 rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}</span>
+            <VerifiedChip r={r} />
             <time className="w-28 text-right text-xs text-mute">{fmtDate(r.at)}</time>
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -485,8 +495,9 @@ function Responses({ it, rs }: { it: Interaction; rs: Response[] }) {
           </div>
         </div>
       ) : it.kind === 'vote' ? (
-        <div key={r.id} className="flex items-center gap-3 py-3 text-sm">
+        <div key={r.id} className="flex flex-wrap items-center gap-2 py-3 text-sm">
           <span className="flex-1 font-semibold">{r.name ?? 'Anonim'}{r.anonymous && <span className="ml-2 rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}</span>
+          <VerifiedChip r={r} />
           <span className="rounded-full bg-vote-soft px-3 py-0.5 text-xs font-semibold text-vote">{r.choice}</span>
           <time className="w-28 text-right text-xs text-mute">{fmtDate(r.at)}</time>
         </div>
@@ -587,7 +598,7 @@ function Flow() {
       <Card className="p-6">
         <h2 className="font-display text-lg font-bold">Alur pengunjung (tanpa akun)</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl bg-vote-soft p-4 text-sm"><b className="text-vote">Voting</b><p className="mt-1">Buka link → isi nama → jawab tiap pertanyaan (Ketua, Wakil, …) → kirim vote</p></div>
+          <div className="rounded-xl bg-vote-soft p-4 text-sm"><b className="text-vote">Voting</b><p className="mt-1">Buka link → verifikasi Google / WhatsApp OTP → jawab tiap pertanyaan (Ketua, Wakil, …) → kirim vote</p></div>
           <div className="rounded-xl bg-fb-soft p-4 text-sm"><b className="text-fb">Kritik &amp; Saran</b><p className="mt-1">Buka link → isi nama → tulis masukan → kirim</p></div>
           <div className="rounded-xl bg-anon-soft p-4 text-sm"><b className="text-anon">Anonim</b><p className="mt-1">Buka link → tulis pesan → kirim (tanpa identitas)</p></div>
         </div>

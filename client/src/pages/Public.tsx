@@ -1,11 +1,22 @@
-import { useState } from 'react'
-import { useStore, type Interaction, type VoteQuestion } from '../services/store'
-import { Btn, Card, Field, KIND, KindBadge, Logo, inputCls } from '../components/ui'
+import { useEffect, useRef, useState } from 'react'
+import { useStore, type Interaction, type Response, type VoteQuestion } from '../services/store'
+import { initGoogleSignIn, isGoogleConfigured } from '../services/googleAuth'
+import {
+  clearVoter,
+  loadVoter,
+  maskPhone,
+  requestOtp,
+  saveVoter,
+  validatePhone,
+  verifyOtp,
+  type VerifiedVoter,
+} from '../services/otpService'
+import { Btn, Card, Field, KIND, KindBadge, Logo, fmtDate, inputCls } from '../components/ui'
 
 /** Cara pengunjung mengidentifikasi diri saat mengisi form publik. */
 type Identity = 'nama' | 'anon'
-/** Tahap pengisian: isi form → konfirmasi → terkirim. */
-type Phase = 'isi' | 'konfirmasi' | 'terkirim'
+/** Tahap pengisian: verifikasi → isi form → konfirmasi → terkirim (atau sudah: sudah pernah voting). */
+type Phase = 'verifikasi' | 'isi' | 'konfirmasi' | 'terkirim' | 'sudah'
 /** Tampilan voting multi-pertanyaan: satu pertanyaan per halaman, atau semuanya sekaligus. */
 type MultiView = 'page' | 'all'
 
@@ -52,16 +63,281 @@ function QuestionBlock({ q, num, value, onPick }: { q: VoteQuestion; num: number
   )
 }
 
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden>
+      <path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.3 6.1 29.3 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z" />
+      <path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.3 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
+      <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z" />
+      <path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.6-.4-3.9z" />
+    </svg>
+  )
+}
+
+/**
+ * Gerbang verifikasi sebelum voting: 1 akun Google / 1 nomor WhatsApp = 1 suara.
+ * Berlaku untuk semua voting (satu maupun multi-pertanyaan). Feedback & pesan
+ * anonim tidak melewati gerbang ini.
+ */
+function VerificationGate({ slug, onVerified, onAlreadyVoted }: {
+  slug: string
+  onVerified: (v: VerifiedVoter) => void
+  onAlreadyVoted: (message: string) => void
+}) {
+  const [method, setMethod] = useState<'whatsapp' | 'google'>('whatsapp')
+  const [phone, setPhone] = useState('')
+  const [code, setCode] = useState('')
+  const [otpStep, setOtpStep] = useState<'phone' | 'code'>('phone')
+  const [sending, setSending] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
+  const [devOtp, setDevOtp] = useState<string | null>(null)
+  const [demoMode, setDemoMode] = useState(false)
+  const [expiresAt, setExpiresAt] = useState(0)
+  const [resendAt, setResendAt] = useState(0)
+  const [remainingAttempts, setRemainingAttempts] = useState<number | null>(null)
+  const [now, setNow] = useState(Date.now())
+  const googleBtnRef = useRef<HTMLDivElement>(null)
+  const googleConfigured = isGoogleConfigured()
+
+  // Hitung mundur masa berlaku kode OTP.
+  useEffect(() => {
+    if (otpStep !== 'code' || !expiresAt) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [otpStep, expiresAt])
+
+  // Tombol resmi Google dirender oleh Google Identity Services ke div ini.
+  useEffect(() => {
+    if (method !== 'google' || !googleConfigured) return
+    let cleanup: (() => void) | undefined
+    let cancelled = false
+    initGoogleSignIn(({ profile, error: err }) => {
+      if (err) setError(err)
+      else if (profile) {
+        onVerified({
+          method: 'google',
+          key: `google:${profile.googleId}`,
+          label: profile.email,
+          verifiedAt: new Date().toISOString(),
+          slug,
+        })
+      }
+    }, googleBtnRef.current)
+      .then((fn) => {
+        if (cancelled) fn()
+        else cleanup = fn
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Login Google gagal dimuat.'))
+    return () => {
+      cancelled = true
+      cleanup?.()
+    }
+    // onVerified stabil dari parent (setState + setPhase); sengaja tidak dimasukkan.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [method, googleConfigured, slug])
+
+  const remainingSeconds = Math.max(0, Math.floor((expiresAt - now) / 1000))
+  const mmss = `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`
+  const canResend = now >= resendAt
+
+  const sendOtp = async () => {
+    const check = validatePhone(phone)
+    if (!check.phone) {
+      setError(check.error ?? 'Nomor WhatsApp tidak valid.')
+      return
+    }
+    setSending(true)
+    setError(null)
+    setInfo(null)
+    const res = await requestOtp(slug, check.phone)
+    setSending(false)
+    if (!res.ok) {
+      if (res.alreadyVoted) {
+        onAlreadyVoted(res.error ?? 'Nomor WhatsApp ini sudah pernah digunakan untuk mengisi voting ini. Setiap nomor hanya dapat mengisi satu kali.')
+        return
+      }
+      // Notifikasi gagal verifikasi: pesan backend ditampilkan apa adanya.
+      setError(res.error ?? 'Gagal mengirim kode OTP.')
+      return
+    }
+    setOtpStep('code')
+    setCode('')
+    setExpiresAt(Date.now() + (res.expiresInSeconds ?? 300) * 1000)
+    setResendAt(Date.now() + 60_000)
+    setRemainingAttempts(null)
+    setDevOtp(res.devOtp ?? null)
+    setDemoMode(!!res.demo)
+    setInfo(`Kode OTP dikirim ke ${maskPhone(check.phone)}. Kode berlaku 5 menit.`)
+  }
+
+  const verify = async () => {
+    const check = validatePhone(phone)
+    if (!check.phone) {
+      setError(check.error ?? 'Nomor WhatsApp tidak valid.')
+      return
+    }
+    if (code.replace(/[^0-9]/g, '').length !== 6) {
+      setError('Masukkan 6 angka kode OTP yang Anda terima.')
+      return
+    }
+    setVerifying(true)
+    setError(null)
+    const res = await verifyOtp(slug, check.phone, code)
+    setVerifying(false)
+    if (!res.ok) {
+      setRemainingAttempts(res.remainingAttempts ?? null)
+      setError(res.error ?? 'Verifikasi OTP gagal.')
+      return
+    }
+    onVerified({
+      method: 'whatsapp',
+      key: `wa:${check.phone}`,
+      label: maskPhone(check.phone),
+      token: res.verificationToken,
+      verifiedAt: new Date().toISOString(),
+      slug,
+    })
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="font-display text-xl font-bold">Verifikasi sebelum voting</h2>
+        <p className="mt-1 text-sm text-mute">
+          Satu akun Google atau satu nomor WhatsApp hanya dapat mengisi satu kali. Pilih cara verifikasi Anda.
+        </p>
+      </div>
+
+      <div className="flex gap-2" role="group" aria-label="Cara verifikasi">
+        <Btn type="button" variant={method === 'whatsapp' ? 'primary' : 'ghost'} className="flex-1 py-2" onClick={() => setMethod('whatsapp')}>💬 WhatsApp OTP</Btn>
+        <Btn type="button" variant={method === 'google' ? 'primary' : 'ghost'} className="flex-1 py-2" onClick={() => setMethod('google')}><GoogleIcon /> Login Google</Btn>
+      </div>
+
+      {error && (
+        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          Verifikasi gagal: {error}
+          {remainingAttempts !== null && remainingAttempts > 0 && ` Sisa kesempatan: ${remainingAttempts} kali.`}
+        </p>
+      )}
+      {info && !error && <p className="rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand" role="status">{info}</p>}
+
+      {method === 'google' ? (
+        <div className="space-y-3">
+          {googleConfigured ? (
+            <>
+              <div className="flex justify-center">
+                <div ref={googleBtnRef} aria-label="Login dengan Google" />
+              </div>
+              <p className="text-center text-xs text-mute">
+                Login Google hanya dipakai untuk memastikan satu akun satu suara. Nama yang tampil di jawaban tetap mengikuti pilihan identitas Anda di langkah berikutnya.
+              </p>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setError('Login Google belum dikonfigurasi. Isi VITE_GOOGLE_CLIENT_ID di file .env (lihat .env.example), lalu muat ulang aplikasi.')}
+                className="flex w-full items-center justify-center gap-3 rounded-lg border border-line bg-white px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-ground"
+              >
+                <GoogleIcon /> Lanjutkan dengan Google
+              </button>
+              <p className="text-center text-xs text-mute">
+                Tombol Google belum aktif karena Client ID Google belum diatur. Sementara itu Anda bisa verifikasi lewat WhatsApp OTP.
+              </p>
+            </>
+          )}
+        </div>
+      ) : otpStep === 'phone' ? (
+        <div className="space-y-3">
+          <Field label="Nomor WhatsApp" hint="Kode OTP 6 angka dikirim ke nomor ini. Contoh: 0812-3456-7890.">
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 rounded-lg border border-line bg-ground px-3 py-2 text-sm font-semibold text-mute">+62</span>
+              <input
+                className={inputCls}
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="812-3456-7890"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/[^0-9+\s-]/g, ''))}
+              />
+            </div>
+          </Field>
+          <Btn className="w-full py-2.5" disabled={sending} onClick={sendOtp}>
+            {sending ? 'Mengirim kode…' : 'Kirim kode OTP'}
+          </Btn>
+          <p className="text-center text-xs text-mute">Dengan melanjutkan, Anda menyetujui nomor ini dipakai hanya untuk verifikasi voting ini.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <Field label="Kode OTP" hint={`Masukkan 6 angka yang dikirim ke ${maskPhone(normalizePhoneForDisplay(phone))}.`}>
+            <input
+              className={`${inputCls} text-center text-2xl font-bold tracking-[0.5em]`}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              placeholder="••••••"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') verify()
+              }}
+            />
+          </Field>
+          <p className="text-center text-sm" aria-live="polite">
+            {remainingSeconds > 0 ? (
+              <span className="text-mute">Kode berlaku <b className="text-ink tabular-nums">{mmss}</b></span>
+            ) : (
+              <span className="font-medium text-red-700">Kode kedaluwarsa — minta kode baru di bawah.</span>
+            )}
+          </p>
+          {devOtp && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
+              {demoMode
+                ? <>Mode demo — server verifikasi tidak terjangkau, kode OTP Anda: <b className="tabular-nums">{devOtp}</b>. Di production kode dikirim via WhatsApp.</>
+                : <>Kode demo dari server (provider mock): <b className="tabular-nums">{devOtp}</b>. Aktifkan provider WhatsApp (mis. Fonnte) agar kode terkirim sungguhan.</>}
+            </p>
+          )}
+          <Btn className="w-full py-2.5" disabled={verifying || remainingSeconds <= 0} onClick={verify}>
+            {verifying ? 'Memverifikasi…' : 'Verifikasi kode'}
+          </Btn>
+          <div className="flex gap-2">
+            <Btn type="button" variant="ghost" className="flex-1 py-2" onClick={() => { setOtpStep('phone'); setError(null); setInfo(null); setDevOtp(null) }}>← Ganti nomor</Btn>
+            <Btn type="button" variant="ghost" className="flex-1 py-2" disabled={!canResend || sending} onClick={sendOtp}>
+              {canResend ? 'Kirim ulang kode' : `Kirim ulang (${Math.ceil((resendAt - now) / 1000)} dtk)`}
+            </Btn>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function normalizePhoneForDisplay(raw: string): string {
+  const clean = raw.replace(/[^0-9]/g, '')
+  if (clean.startsWith('0')) return '62' + clean.slice(1)
+  if (clean.startsWith('8')) return '62' + clean
+  return clean
+}
+
 export default function Public({ slug }: { slug: string }) {
-  const { interactions, submit } = useStore()
+  const { interactions, responses, submit } = useStore()
   const it = interactions.find((i) => i.slug === slug)
+  const [voter, setVoter] = useState<VerifiedVoter | null>(() => loadVoter(slug))
+  const [phase, setPhase] = useState<Phase>(() => {
+    const found = interactions.find((i) => i.slug === slug)
+    if (found?.kind !== 'vote') return 'isi'
+    const v = loadVoter(slug)
+    if (!v) return 'verifikasi'
+    return responses.some((r) => r.iid === found.id && r.voterKey === v.key) ? 'sudah' : 'isi'
+  })
+  const [alreadyMsg, setAlreadyMsg] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [choice, setChoice] = useState('')
   const [msg, setMsg] = useState('')
   const [topic, setTopic] = useState('')
   const [identity, setIdentity] = useState<Identity>('nama')
-  const [phase, setPhase] = useState<Phase>('isi')
-  /** Jawaban voting multi-pertanyaan: id pertanyaan → label pilihan. */
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [view, setView] = useState<MultiView>('page')
   const [step, setStep] = useState(0)
@@ -75,6 +351,7 @@ export default function Public({ slug }: { slug: string }) {
   const effectiveIdentity: Identity = forcedAnon ? 'anon' : identity
   const isAnon = effectiveIdentity === 'anon'
 
+  const isVote = it?.kind === 'vote'
   const multi = isMulti(it)
   const qs = flowQuestions(it)
   const hiddenCount = (it?.questions?.length ?? 0) - qs.length
@@ -82,8 +359,37 @@ export default function Public({ slug }: { slug: string }) {
   const cur = qs[Math.min(step, Math.max(0, qs.length - 1))]
   const progressPct = qs.length ? Math.round((answeredCount / qs.length) * 100) : 0
 
+  /** Respons sebelumnya dari voter yang sama di voting ini (bila ada). */
+  const prevVote: Response | undefined =
+    isVote && voter && it ? responses.find((r) => r.iid === it.id && r.voterKey === voter.key) : undefined
+  /** Tampilkan layar "sudah voting" — baik dari fase 'sudah' maupun saat reset setelah terkirim. */
+  const showAlready = isVote && !!voter && !!prevVote && phase !== 'terkirim'
+
   /** Pertanyaan pertama yang belum dijawab (untuk lompat & pesan). */
   const firstUnanswered = () => qs.findIndex((q) => !answers[q.id])
+
+  const handleVerified = (v: VerifiedVoter) => {
+    saveVoter(v)
+    setVoter(v)
+    setAlreadyMsg(null)
+    if (it && responses.some((r) => r.iid === it.id && r.voterKey === v.key)) {
+      setPhase('sudah')
+    } else {
+      setPhase('isi')
+    }
+  }
+
+  const handleAlreadyVoted = (message: string) => {
+    setAlreadyMsg(message)
+    setPhase('sudah')
+  }
+
+  const changeVerification = () => {
+    clearVoter()
+    setVoter(null)
+    setAlreadyMsg(null)
+    setPhase('verifikasi')
+  }
 
   /** Membuka tahap konfirmasi — jawaban belum dikirim pada tahap ini. */
   const review = (e: React.FormEvent) => {
@@ -133,8 +439,11 @@ export default function Public({ slug }: { slug: string }) {
   const send = () => {
     if (!it) return
     const sender = isAnon ? { anonymous: true as const } : { name: name.trim(), anonymous: false as const }
-    if (multi) submit({ iid: it.id, choice: multiSummary(qs, answers), choices: { ...answers }, ...sender })
-    else if (it.kind === 'vote') submit({ iid: it.id, choice, ...sender })
+    const voterInfo = voter
+      ? { voterKey: voter.key, verifiedVia: voter.method, verificationLabel: voter.label }
+      : {}
+    if (multi) submit({ iid: it.id, choice: multiSummary(qs, answers), choices: { ...answers }, ...sender, ...voterInfo, verificationToken: voter?.token })
+    else if (it.kind === 'vote') submit({ iid: it.id, choice, ...sender, ...voterInfo, verificationToken: voter?.token })
     else if (it.kind === 'feedback') submit({ iid: it.id, message: topic ? `[${topic}] ${msg}` : msg, ...sender })
     else submit({ iid: it.id, message: msg, anonymous: true })
     setPhase('terkirim')
@@ -176,13 +485,45 @@ export default function Public({ slug }: { slug: string }) {
                       {isAnon ? '◌ Identitas: Anonymous' : '👤 Identitas: Nama asli'}
                     </span>
                   )}
+                  {voter && phase === 'isi' && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700" role="status">
+                      ✓ Terverifikasi · {voter.method === 'google' ? 'Google' : 'WhatsApp'} {voter.label}
+                    </span>
+                  )}
                 </div>
                 <h1 className="font-display text-3xl font-extrabold leading-tight">{it.title}</h1>
                 <p className="text-mute">{it.description}</p>
+                {voter && phase === 'isi' && (
+                  <button type="button" className="text-xs font-semibold text-brand hover:underline" onClick={changeVerification}>
+                    Ganti verifikasi
+                  </button>
+                )}
               </div>
 
               {closed ? (
                 <p className="rounded-lg bg-ground p-4 text-sm font-medium text-mute">Interaksi ini sedang tidak aktif atau di luar periode.</p>
+              ) : phase === 'verifikasi' ? (
+                <VerificationGate slug={it.slug} onVerified={handleVerified} onAlreadyVoted={handleAlreadyVoted} />
+              ) : showAlready || phase === 'sudah' ? (
+                <div className="space-y-4 rounded-xl bg-amber-50 p-6 text-center">
+                  <p className="font-display text-xl font-bold text-amber-800">Anda sudah pernah melakukan voting</p>
+                  <p className="text-sm leading-relaxed text-amber-900/80">
+                    {alreadyMsg ?? `${voter?.method === 'google' ? 'Akun Google' : 'Nomor WhatsApp'} ${voter?.label ?? ''} sudah pernah digunakan untuk mengisi voting ini. Setiap akun/nomor hanya dapat mengisi satu kali.`}
+                  </p>
+                  {prevVote && (
+                    <dl className="space-y-1.5 rounded-xl bg-white/70 p-4 text-left text-sm">
+                      <div className="flex justify-between gap-4">
+                        <dt className="text-mute">Pilihan Anda</dt>
+                        <dd className="text-right font-semibold">{prevVote.choice}</dd>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <dt className="text-mute">Waktu</dt>
+                        <dd className="text-right font-semibold">{fmtDate(prevVote.at)}</dd>
+                      </div>
+                    </dl>
+                  )}
+                  <Btn variant="ghost" onClick={changeVerification}>Verifikasi dengan akun/nomor lain</Btn>
+                </div>
               ) : phase === 'terkirim' ? (
                 <div className="space-y-3 rounded-xl bg-brand-soft p-6 text-center">
                   <p className="font-display text-xl font-bold text-brand">{it.kind === 'vote' ? 'Suara Anda tercatat' : it.kind === 'anon' ? 'Pesan terkirim secara anonim' : 'Terima kasih atas masukan Anda'}</p>
@@ -212,6 +553,12 @@ export default function Public({ slug }: { slug: string }) {
                       <dt className="shrink-0 font-semibold text-mute">Identitas</dt>
                       <dd className="text-right font-semibold">{isAnon ? '◌ Anonymous' : `👤 Nama asli — ${name.trim()}`}</dd>
                     </div>
+                    {voter && (
+                      <div className="flex justify-between gap-4">
+                        <dt className="shrink-0 font-semibold text-mute">Terverifikasi</dt>
+                        <dd className="text-right font-semibold">{voter.method === 'google' ? 'Google' : 'WhatsApp'} · {voter.label}</dd>
+                      </div>
+                    )}
                     {multi ? (
                       qs.map((q) => (
                         <div key={q.id} className="flex justify-between gap-4">

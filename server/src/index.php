@@ -22,6 +22,7 @@ require_once __DIR__ . '/controllers/InteractionController.php';
 require_once __DIR__ . '/controllers/QuestionController.php';
 require_once __DIR__ . '/controllers/ResponseController.php';
 require_once __DIR__ . '/controllers/PublicController.php';
+require_once __DIR__ . '/controllers/OtpController.php';
 require_once __DIR__ . '/controllers/AnalyticsController.php';
 require_once __DIR__ . '/routes/api.php';
 

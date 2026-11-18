@@ -1,6 +1,7 @@
 <?php
 /**
  * Analytics & Statistics Controller
+ * Applies privacy filtering so anonymous responders remain anonymous across summaries.
  */
 
 declare(strict_types=1);
@@ -16,9 +17,10 @@ class AnalyticsController {
      * GET /analytics/overview (Administrator Only)
      */
     public static function overview(): void {
-        AuthMiddleware::requireAdmin();
+        $adminUser = AuthMiddleware::requireAdmin();
 
         $db = Database::getConnection();
+        ResponseModel::ensureTablesExist($db);
 
         // 1. Total regular users
         $stmtUsers = $db->query("SELECT COUNT(*) AS total FROM users WHERE role = 'User'");
@@ -44,8 +46,8 @@ class AnalyticsController {
             }
         }
 
-        // 3. All responses
-        $allResponses = $db->query("SELECT id, interaction_id, name, choice, message, status, created_at FROM responses")->fetchAll();
+        // 3. All responses count
+        $allResponses = $db->query("SELECT id, interaction_id FROM responses")->fetchAll();
         $totalResponses = count($allResponses);
 
         foreach ($allResponses as $r) {
@@ -55,11 +57,17 @@ class AnalyticsController {
             }
         }
 
-        // 4. Recent responses (limit 8)
-        $stmtRecent = $db->query("SELECT * FROM responses ORDER BY created_at DESC LIMIT 8");
+        // 4. Recent responses (limit 8) with privacy masking for admin
+        $stmtRecent = $db->query("
+            SELECT r.*, ri.name AS identity_name, COALESCE(r.is_anonymous, ri.is_anonymous, 0) AS is_anonymous
+            FROM responses r
+            LEFT JOIN response_identities ri ON ri.response_id = r.id
+            ORDER BY r.created_at DESC 
+            LIMIT 8
+        ");
         $recentRows = $stmtRecent->fetchAll();
-        $recentResponses = array_map(function($r) use ($interactionTitleMap) {
-            $formatted = ResponseModel::format($r);
+        $recentResponses = array_map(function($r) use ($interactionTitleMap, $adminUser) {
+            $formatted = ResponseModel::formatWithPrivacy($r, $adminUser);
             $formatted['interaction_title'] = $interactionTitleMap[$r['interaction_id']] ?? 'Interaksi';
             return $formatted;
         }, $recentRows);
@@ -81,6 +89,7 @@ class AnalyticsController {
         $userId = $currentUser['id'];
 
         $db = Database::getConnection();
+        ResponseModel::ensureTablesExist($db);
 
         // 1. User's interactions
         $stmt = $db->prepare("SELECT id, kind, title FROM interactions WHERE owner_id = :owner_id");
@@ -98,6 +107,7 @@ class AnalyticsController {
 
         $interactionKindMap = [];
         $interactionTitleMap = [];
+
         foreach ($userInteractions as $i) {
             $interactionKindMap[$i['id']] = $i['kind'];
             $interactionTitleMap[$i['id']] = $i['title'];
@@ -127,12 +137,19 @@ class AnalyticsController {
                 }
             }
 
-            // Recent responses for this user's interactions
-            $stmtRecent = $db->prepare("SELECT * FROM responses WHERE interaction_id IN ($placeholders) ORDER BY created_at DESC LIMIT 8");
+            // Recent responses for this user's interactions with privacy masking
+            $stmtRecent = $db->prepare("
+                SELECT r.*, ri.name AS identity_name, COALESCE(r.is_anonymous, ri.is_anonymous, 0) AS is_anonymous
+                FROM responses r
+                LEFT JOIN response_identities ri ON ri.response_id = r.id
+                WHERE r.interaction_id IN ($placeholders) 
+                ORDER BY r.created_at DESC 
+                LIMIT 8
+            ");
             $stmtRecent->execute($interactionIds);
             $recentRows = $stmtRecent->fetchAll();
-            $recentResponses = array_map(function($r) use ($interactionTitleMap) {
-                $formatted = ResponseModel::format($r);
+            $recentResponses = array_map(function($r) use ($interactionTitleMap, $currentUser) {
+                $formatted = ResponseModel::formatWithPrivacy($r, $currentUser);
                 $formatted['interaction_title'] = $interactionTitleMap[$r['interaction_id']] ?? 'Interaksi';
                 return $formatted;
             }, $recentRows);

@@ -52,8 +52,15 @@ try {
     output("--------------------------------------------------", $isCli);
     output("Tabel yang dibuat:", $isCli);
     output(" - users", $isCli);
+    output(" - sessions", $isCli);
     output(" - interactions", $isCli);
+    output(" - voting_questions", $isCli);
     output(" - responses", $isCli);
+    output(" - response_identities", $isCli);
+    output(" - voting_answers", $isCli);
+    output(" - notifications", $isCli);
+    output(" - recommendation_rules", $isCli);
+    output(" - recommendation_results", $isCli);
     output("", $isCli);
     output("Akun bawaan yang tersedia:", $isCli);
     output(" - Administrator : admin / admin12345 (admin@forafa.app)", $isCli);
@@ -63,7 +70,11 @@ try {
 
 } catch (Throwable $e) {
     output("❌ Terjadi kesalahan: " . $e->getMessage(), $isCli);
-    output("💡 Pastikan server MySQL (Laragon/XAMPP) sudah aktif di port 3306.", $isCli);
+    if (str_contains($e->getMessage(), 'pdo_mysql')) {
+        output("💡 Ekstensi pdo_mysql belum aktif di PHP yang menjalankan perintah ini — bukan MySQL-nya yang mati. Jalankan dari terminal Laragon, aktifkan extension=pdo_mysql di php.ini CLI, atau: php -d extension=pdo_mysql setup.php", $isCli);
+    } else {
+        output("💡 Pastikan server MySQL (Laragon/XAMPP) sudah aktif di port 3306.", $isCli);
+    }
     if ($isCli) {
         exit(1);
     }

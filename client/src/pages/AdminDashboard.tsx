@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useStore, type User, type Kind } from '../services/store'
 import UserWorkspace from './UserWorkspace'
 import { MediaUpload } from '../components/MediaUpload'
+import { SessionStatus } from '../components/SessionStatus'
 import { Btn, Card, Field, KIND, Logo, fmtDate, inputCls } from '../components/ui'
 
 type AdminNav = 'overview' | 'users'
@@ -9,7 +10,7 @@ type AdminNav = 'overview' | 'users'
 const kindDot: Record<Kind, string> = { vote: 'bg-vote', feedback: 'bg-fb', anon: 'bg-anon' }
 
 export default function AdminDashboard() {
-  const { user, logout } = useStore()
+  const { logout } = useStore()
   const [nav, setNav] = useState<AdminNav>('overview')
   const [viewingUser, setViewingUser] = useState<User | null>(null)
 
@@ -42,10 +43,7 @@ export default function AdminDashboard() {
         </nav>
 
         <div className="mt-auto hidden space-y-3 lg:block">
-          <div className="rounded-xl bg-white/10 p-3">
-            <p className="font-semibold text-white text-sm">{user!.username}</p>
-            <p className="text-xs text-white/50 mt-0.5">Administrator</p>
-          </div>
+          <SessionStatus dark />
           <button onClick={logout} className="w-full rounded-lg border border-white/20 px-4 py-2 text-sm font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white">
             Keluar
           </button>
@@ -80,6 +78,7 @@ function AdminOverview({ onViewUser }: { onViewUser: (u: User) => void }) {
       <header>
         <p className="text-xs font-bold uppercase tracking-widest text-brand">Administrator</p>
         <h1 className="font-display text-4xl font-extrabold tracking-tight">Ringkasan Platform</h1>
+        <div className="mt-3"><SessionStatus variant="pill" /></div>
       </header>
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

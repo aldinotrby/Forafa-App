@@ -26,12 +26,15 @@ function registerApiRoutes(Router $router): void {
 
     foreach ($prefixes as $p) {
         // --------------------------------------------------------------------------
-        // Auth Routes
+        // Auth & Session Routes
         // --------------------------------------------------------------------------
         $router->post("{$p}/auth/register", [AuthController::class, 'register']);
         $router->post("{$p}/auth/login", [AuthController::class, 'login']);
+        $router->post("{$p}/auth/google", [AuthController::class, 'googleLogin']);
         $router->post("{$p}/auth/logout", [AuthController::class, 'logout']);
         $router->get("{$p}/auth/me", [AuthController::class, 'me']);
+        $router->get("{$p}/auth/session", [AuthController::class, 'validateSession']);
+        $router->get("{$p}/auth/validate-session", [AuthController::class, 'validateSession']);
 
         // --------------------------------------------------------------------------
         // Users Management Routes (Admin & Profile)
@@ -54,9 +57,29 @@ function registerApiRoutes(Router $router): void {
         $router->get("{$p}/interactions/{id}/responses", [InteractionController::class, 'getResponses']);
 
         // --------------------------------------------------------------------------
+        // Voting Questions & Branching Routes
+        // --------------------------------------------------------------------------
+        $router->get("{$p}/interactions/{id}/questions", [QuestionController::class, 'list']);
+        $router->post("{$p}/interactions/{id}/questions", [QuestionController::class, 'create']);
+        $router->post("{$p}/interactions/{id}/questions/reorder", [QuestionController::class, 'reorder']);
+
+        // --------------------------------------------------------------------------
+        // Recommendation Rules & Results Routes (IF-ELSE Voting Recommendation)
+        // --------------------------------------------------------------------------
+        $router->get("{$p}/interactions/{id}/recommendation/rules", [RecommendationController::class, 'listRules']);
+        $router->post("{$p}/interactions/{id}/recommendation/rules", [RecommendationController::class, 'createRule']);
+        $router->patch("{$p}/interactions/{id}/recommendation/rules/{rid}", [RecommendationController::class, 'updateRule']);
+        $router->delete("{$p}/interactions/{id}/recommendation/rules/{rid}", [RecommendationController::class, 'deleteRule']);
+        $router->get("{$p}/interactions/{id}/recommendation/results", [RecommendationController::class, 'listResults']);
+        $router->get("{$p}/interactions/{id}/questions/{qid}", [QuestionController::class, 'getDetail']);
+        $router->patch("{$p}/interactions/{id}/questions/{qid}", [QuestionController::class, 'update']);
+        $router->delete("{$p}/interactions/{id}/questions/{qid}", [QuestionController::class, 'delete']);
+
+        // --------------------------------------------------------------------------
         // Responses Management Routes
         // --------------------------------------------------------------------------
         $router->get("{$p}/responses/export/csv", [ResponseController::class, 'exportCsv']);
+        $router->get("{$p}/responses/mine", [ResponseController::class, 'mine']);
         $router->get("{$p}/responses", [ResponseController::class, 'list']);
         $router->patch("{$p}/responses/{id}", [ResponseController::class, 'update']);
         $router->delete("{$p}/responses/{id}", [ResponseController::class, 'delete']);
@@ -66,6 +89,18 @@ function registerApiRoutes(Router $router): void {
         // --------------------------------------------------------------------------
         $router->get("{$p}/public/{slug}", [PublicController::class, 'getDetail']);
         $router->post("{$p}/public/{slug}/submit", [PublicController::class, 'submit']);
+        // Verifikasi voter (dipakai halaman publik sebelum voting):
+        // OTP WhatsApp — 1 nomor = 1 suara, kode 6 angka, maks. 3x percobaan.
+        $router->post("{$p}/public/{slug}/otp/send", [OtpController::class, 'send']);
+        $router->post("{$p}/public/{slug}/otp/verify", [OtpController::class, 'verify']);
+
+        // --------------------------------------------------------------------------
+        // Notifications Routes (Private per User)
+        // --------------------------------------------------------------------------
+        $router->get("{$p}/notifications", [NotificationController::class, 'list']);
+        $router->get("{$p}/notifications/unread-count", [NotificationController::class, 'unreadCount']);
+        $router->post("{$p}/notifications/read-all", [NotificationController::class, 'markAllRead']);
+        $router->post("{$p}/notifications/{id}/read", [NotificationController::class, 'markRead']);
 
         // --------------------------------------------------------------------------
         // Analytics & Overview Routes

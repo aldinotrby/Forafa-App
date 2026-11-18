@@ -1,12 +1,14 @@
 <?php
 /**
  * Authentication & Authorization Middleware
+ * Validates JWT access token and active server-side session.
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/../utils/JWT.php';
 require_once __DIR__ . '/../utils/Response.php';
+require_once __DIR__ . '/../models/Session.php';
 require_once __DIR__ . '/../config/database.php';
 
 class AuthMiddleware {
@@ -33,7 +35,7 @@ class AuthMiddleware {
     }
 
     /**
-     * Require authenticated user, returns user data array
+     * Require authenticated user and valid session, returns user data array
      */
     public static function authenticate(): array {
         $token = self::getBearerToken();
@@ -49,6 +51,15 @@ class AuthMiddleware {
         }
 
         $db = Database::getConnection();
+
+        // Validate active session in database (including idle timeout and revocation)
+        $idleMinutes = (int)($config['session']['idle_minutes'] ?? 120);
+        $session = Session::validate($db, $token, $idleMinutes);
+
+        if (!$session) {
+            ApiResponse::error("Session telah kedaluwarsa atau telah keluar. Silakan login kembali.", 401);
+        }
+
         $stmt = $db->prepare("SELECT id, username, email, role, created_at FROM users WHERE id = :id");
         $stmt->execute([':id' => $payload['sub']]);
         $user = $stmt->fetch();
@@ -56,6 +67,9 @@ class AuthMiddleware {
         if (!$user) {
             ApiResponse::error("Pengguna tidak ditemukan.", 404);
         }
+
+        // Attach session metadata
+        $user['_session'] = $session;
 
         return $user;
     }

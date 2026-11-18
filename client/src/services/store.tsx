@@ -1,8 +1,12 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { disableGoogleAutoSelect, type GoogleProfile } from './googleAuth'
 
 export type Kind = 'vote' | 'feedback' | 'anon'
 export type Status = 'Baru' | 'Dibaca' | 'Diproses' | 'Selesai'
 export type Role = 'User' | 'Administrator'
+export type AuthProvider = 'password' | 'google'
+/** Kondisi tab saat ini: 'online' = tab aktif/terlihat, 'inactive' = tab disembunyikan / jendela tidak fokus. */
+export type Presence = 'online' | 'inactive'
 
 export interface User {
   id: string
@@ -10,6 +14,44 @@ export interface User {
   email: string
   role: Role
   avatar?: string
+  /** Cara pengguna pertama kali masuk: password atau Google. */
+  provider?: AuthProvider
+  /** Subject ID Google (`sub`), hanya untuk akun Google. */
+  googleId?: string
+}
+
+/** Informasi sesi login yang sedang berjalan. */
+export interface SessionInfo {
+  userId: string
+  provider: AuthProvider
+  /** Waktu login (ISO). */
+  loginAt: string
+  /** Aktivitas terakhir yang tercatat (ISO). */
+  lastSeenAt: string
+  /** Waktu tab ini dibuka (ISO). */
+  tabOpenedAt: string
+}
+
+/** Jejak kondisi akun di luar sesi aktif — ditampilkan juga di halaman login. */
+export interface SessionHistory {
+  /** Terakhir kali sebuah tab aplikasi ditutup (ISO). */
+  lastTabClosedAt: string | null
+  /** Terakhir kali pengguna logout (ISO). */
+  lastLogoutAt: string | null
+}
+/** Satu pilihan kandidat di dalam satu pertanyaan voting multi-pertanyaan. */
+export interface VoteOption {
+  label: string
+  /** false = pilihan nonaktif: tampil tapi tidak bisa dipilih pengunjung. */
+  active: boolean
+}
+/** Satu pertanyaan dalam voting multi-pertanyaan (mis. Ketua, Wakil Ketua). */
+export interface VoteQuestion {
+  id: string
+  title: string
+  /** false = pertanyaan nonaktif: disembunyikan dari pengunjung & tidak dihitung progres. */
+  active: boolean
+  options: VoteOption[]
 }
 export interface Interaction {
   id: string
@@ -22,6 +64,13 @@ export interface Interaction {
   start: string
   end: string
   options: string[]
+  /**
+   * Hanya untuk voting multi-pertanyaan: daftar pertanyaan dalam satu link.
+   * Bila kosong/undefined, voting berlaku seperti dulu — satu pertanyaan
+   * dengan `options`. `options` tetap diisi gabungan semua label pilihan
+   * agar data lama, backend, dan CSV tetap bisa membaca voting ini.
+   */
+  questions?: VoteQuestion[]
   createdAt: string
   banner?: string
 }
@@ -30,11 +79,29 @@ export interface Response {
   iid: string
   name?: string
   choice?: string
+  /** Voting multi-pertanyaan: jawaban per pertanyaan (id pertanyaan → label pilihan). `choice` tetap diisi ringkasannya. */
+  choices?: Record<string, string>
   message?: string
   status: Status
   reply?: string
   shared?: boolean
   at: string
+  /**
+   * true bila pengirim memilih "Isi sebagai Anonymous" di form publik:
+   * nama tidak diminta, tidak disimpan, dan ditampilkan sebagai "Anonim".
+   * Untuk interaksi jenis 'anon' kolom ini selalu dianggap true.
+   */
+  anonymous?: boolean
+  /**
+   * Identitas terverifikasi pengirim voting (1 akun/nomor = 1 suara):
+   * `google:<sub>` atau `wa:<nomor62>`. Dipakai untuk menampilkan pesan
+   * "sudah pernah voting" bila identitas yang sama mengisi lagi.
+   */
+  voterKey?: string
+  /** Cara voter terverifikasi: Google atau OTP WhatsApp. */
+  verifiedVia?: 'google' | 'whatsapp'
+  /** Label tampil identitas terverifikasi (email / nomor tersamarkan). */
+  verificationLabel?: string
 }
 
 interface Store {
@@ -42,8 +109,18 @@ interface Store {
   users: User[]
   interactions: Interaction[]
   responses: Response[]
+  /** Sesi aktif; null bila belum login. */
+  session: SessionInfo | null
+  /** Kondisi tab saat ini (aktif / tidak aktif). */
+  presence: Presence
+  /** Status login ringkas: 'masuk' bila ada sesi aktif, selain itu 'keluar'. */
+  loginStatus: 'masuk' | 'keluar'
+  /** Jejak tab terakhir ditutup & logout terakhir. */
+  sessionHistory: SessionHistory
   register: (u: { username: string; email: string; password: string }) => string | null
   login: (id: string, password: string) => string | null
+  /** Login/registrasi dengan profil terverifikasi dari Google Sign-In. */
+  loginWithGoogle: (profile: GoogleProfile) => string | null
   logout: () => void
   adminCreateUser: (u: { username: string; email: string; password: string }) => string | null
   updateUser: (id: string, patch: { username?: string; email?: string; avatar?: string }) => string | null
@@ -52,7 +129,8 @@ interface Store {
   addInteraction: (i: Omit<Interaction, 'id' | 'ownerId' | 'slug' | 'createdAt'>, ownerIdOverride?: string) => Interaction
   updateInteraction: (id: string, patch: Partial<Interaction>) => void
   removeInteraction: (id: string) => void
-  submit: (r: Omit<Response, 'id' | 'at' | 'status'>) => void
+  /** verificationToken (OTP WhatsApp, 15 menit) ikut terkirim ke backend tapi TIDAK disimpan lokal. */
+  submit: (r: Omit<Response, 'id' | 'at' | 'status'> & { verificationToken?: string }) => void
   patchResponse: (id: string, patch: Partial<Response>) => void
   removeResponse: (id: string) => void
 }
@@ -65,10 +143,28 @@ const ago = (h: number) => new Date(Date.now() - h * 3600_000).toISOString()
 const day = (d: number) => new Date(Date.now() + d * 86400_000).toISOString().slice(0, 10)
 
 const seedUsers: (User & { password: string })[] = [
-  { id: 'u1', username: 'admin', email: 'admin@forafa.app', role: 'Administrator', password: 'admin12345' },
-  { id: 'u2', username: 'rina', email: 'rina@desa-mekar.id', role: 'User', password: 'rina12345' },
-  { id: 'u3', username: 'budi_rw', email: 'budi@rw05.id', role: 'User', password: 'budi12345' },
+  { id: 'u1', username: 'admin', email: 'admin@forafa.app', role: 'Administrator', password: 'admin12345', provider: 'password' },
+  { id: 'u2', username: 'rina', email: 'rina@desa-mekar.id', role: 'User', password: 'rina12345', provider: 'password' },
+  { id: 'u3', username: 'budi_rw', email: 'budi@rw05.id', role: 'User', password: 'budi12345', provider: 'password' },
 ]
+
+const nowIso = () => new Date().toISOString()
+
+function createSession(userId: string, provider: AuthProvider): SessionInfo {
+  const now = nowIso()
+  return { userId, provider, loginAt: now, lastSeenAt: now, tabOpenedAt: now }
+}
+
+/** Username valid (3-20: huruf, angka, underscore) yang diturunkan dari alamat email akun Google. */
+function usernameFromEmail(email: string, taken: (candidate: string) => boolean): string {
+  const base = (email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 20) || 'user').padEnd(3, '_')
+  if (!taken(base)) return base
+  for (let n = 2; ; n++) {
+    const suffix = `_${n}`
+    const candidate = base.slice(0, 20 - suffix.length) + suffix
+    if (!taken(candidate)) return candidate
+  }
+}
 
 const seedInteractions: Interaction[] = [
   { id: 'i1', ownerId: 'u2', kind: 'vote', title: 'Pilih nama taman baru RW 05', description: 'Warga memilih satu nama untuk taman yang baru diresmikan.', slug: 'taman-rw05', active: true, start: day(-3), end: day(10), options: ['Taman Mekar Asri', 'Taman Bhineka', 'Taman Sudirman Hijau', 'Taman Cahaya'], createdAt: ago(72) },
@@ -76,6 +172,18 @@ const seedInteractions: Interaction[] = [
   { id: 'i3', ownerId: 'u2', kind: 'anon', title: 'Kotak suara warga', description: 'Tulis apa saja tanpa menampilkan identitas Anda.', slug: 'kotak-suara', active: true, start: day(-30), end: day(60), options: [], createdAt: ago(400) },
   { id: 'i4', ownerId: 'u3', kind: 'vote', title: 'Pilih ketua RT baru', description: 'Pemilihan ketua RT periode 2026-2028.', slug: 'pilih-ketua-rt', active: true, start: day(-1), end: day(7), options: ['Pak Suryo', 'Bu Ratna', 'Pak Hasan'], createdAt: ago(24) },
   { id: 'i5', ownerId: 'u3', kind: 'feedback', title: 'Masukan kebersihan lingkungan', description: 'Sampaikan saran untuk program kebersihan RW.', slug: 'kebersihan-rw', active: true, start: day(-5), end: day(25), options: ['Jadwal', 'Peralatan', 'Petugas'], createdAt: ago(120) },
+  {
+    id: 'i6', ownerId: 'u3', kind: 'vote', title: 'Pemilihan pengurus RW 05', description: 'Satu link untuk memilih Ketua, Wakil Ketua, Sekretaris, dan Bendahara periode 2026-2028.',
+    slug: 'pemilu-pengurus-rw05', active: true, start: day(-1), end: day(7),
+    options: ['Pak Suryo', 'Bu Ratna', 'Pak Hasan', 'Dewi Lestari', 'Agus Santoso', 'Maya Putri', 'Rizal Fahmi', 'Sari Wulandari', 'Hendra Gunawan'],
+    questions: [
+      { id: 'q1', title: 'Ketua', active: true, options: [{ label: 'Pak Suryo', active: true }, { label: 'Bu Ratna', active: true }, { label: 'Pak Hasan', active: true }] },
+      { id: 'q2', title: 'Wakil Ketua', active: true, options: [{ label: 'Dewi Lestari', active: true }, { label: 'Agus Santoso', active: true }] },
+      { id: 'q3', title: 'Sekretaris', active: true, options: [{ label: 'Maya Putri', active: true }, { label: 'Rizal Fahmi', active: false }] },
+      { id: 'q4', title: 'Bendahara', active: true, options: [{ label: 'Sari Wulandari', active: true }, { label: 'Hendra Gunawan', active: true }] },
+    ],
+    createdAt: ago(10),
+  },
 ]
 
 const names = ['Budi', 'Sari', 'Dewi', 'Agus', 'Maya', 'Hendra', 'Lina', 'Rizal', 'Tono', 'Putri', 'Yoga', 'Nia']
@@ -85,8 +193,12 @@ const seedResponses: Response[] = [
   { id: 'f2', iid: 'i2', name: 'Pak Dedi', message: 'Ruang tunggu kurang kursi untuk lansia.', status: 'Dibaca', at: ago(20) },
   { id: 'f3', iid: 'i2', name: 'Mita', message: 'Petugas sangat ramah, terima kasih!', status: 'Selesai', reply: 'Terima kasih atas apresiasinya, Bu Mita.', at: ago(60) },
   { id: 'f4', iid: 'i2', name: 'Joko', message: 'Tolong tambah papan informasi jadwal imunisasi.', status: 'Diproses', reply: 'Sedang kami siapkan minggu ini.', at: ago(90) },
+  { id: 'f5', iid: 'i2', name: 'Wati', message: '[Jadwal] Mohon ada sesi sore untuk posyandu.', status: 'Diproses', reply: 'Baik, mulai bulan depan kami buka sesi sore tiap Rabu.', voterKey: 'wa:628123456789', verifiedVia: 'whatsapp', verificationLabel: '+62 812-****-789', at: ago(120) },
+  { id: 'f6', iid: 'i2', name: 'Slamet', message: 'Mohon jadwal ronda malam diumumkan di grup.', status: 'Selesai', reply: 'Sudah diumumkan, terima kasih masukannya.', voterKey: 'google:110012345678901234567', verifiedVia: 'google', verificationLabel: 's***@gmail.com', at: ago(200) },
   { id: 'a1', iid: 'i3', message: 'Lampu jalan di gang mawar sudah seminggu mati.', status: 'Baru', at: ago(4) },
   { id: 'a2', iid: 'i3', message: 'Iuran kebersihan sebaiknya dilaporkan terbuka tiap bulan.', status: 'Dibaca', at: ago(30) },
+  { id: 'v30', iid: 'i6', name: 'Wati', choice: 'Ketua: Bu Ratna; Wakil Ketua: Dewi Lestari; Sekretaris: Maya Putri; Bendahara: Sari Wulandari', choices: { q1: 'Bu Ratna', q2: 'Dewi Lestari', q3: 'Maya Putri', q4: 'Sari Wulandari' }, voterKey: 'wa:628123456789', verifiedVia: 'whatsapp', verificationLabel: '+62 812-****-789', status: 'Baru', at: ago(2) },
+  { id: 'v31', iid: 'i6', name: 'Slamet', choice: 'Ketua: Pak Suryo; Wakil Ketua: Agus Santoso; Sekretaris: Maya Putri; Bendahara: Hendra Gunawan', choices: { q1: 'Pak Suryo', q2: 'Agus Santoso', q3: 'Maya Putri', q4: 'Hendra Gunawan' }, voterKey: 'google:110012345678901234567', verifiedVia: 'google', verificationLabel: 's***@gmail.com', status: 'Baru', at: ago(4) },
   { id: 'v20', iid: 'i4', name: 'Wati', choice: 'Bu Ratna', status: 'Baru', at: ago(3) },
   { id: 'v21', iid: 'i4', name: 'Slamet', choice: 'Pak Suryo', status: 'Baru', at: ago(5) },
   { id: 'v22', iid: 'i4', name: 'Dwi', choice: 'Bu Ratna', status: 'Baru', at: ago(8) },
@@ -96,7 +208,7 @@ const seedResponses: Response[] = [
 const API_BASE = '/api/v1'
 
 const getAuthHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem('fa_token')
+  const token = sessionStorage.getItem('fa_token')
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
@@ -116,20 +228,46 @@ const apiCall = async (path: string, options: RequestInit = {}) => {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const normalizeInteraction = (raw: any): Interaction => ({
-  id: String(raw.id),
-  ownerId: String(raw.ownerId || raw.owner_id || ''),
-  kind: raw.kind as Kind,
-  title: String(raw.title || ''),
-  description: String(raw.description || ''),
-  slug: String(raw.slug || ''),
-  active: Boolean(raw.active),
-  start: String(raw.start || ''),
-  end: String(raw.end || ''),
-  options: Array.isArray(raw.options) ? raw.options : typeof raw.options === 'string' ? JSON.parse(raw.options) : [],
-  createdAt: String(raw.createdAt || raw.created_at || new Date().toISOString()),
-  banner: raw.banner,
+const normalizeVoteOption = (o: any): VoteOption =>
+  typeof o === 'string' ? { label: o, active: true } : { label: String(o?.label ?? o?.name ?? ''), active: o?.active !== false }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const normalizeVoteQuestion = (q: any, idx: number): VoteQuestion => ({
+  id: String(q?.id ?? `q${idx + 1}`),
+  title: String(q?.title ?? q?.question ?? ''),
+  active: q?.active !== false,
+  options: Array.isArray(q?.options) ? q.options.map(normalizeVoteOption).filter((x: VoteOption) => x.label) : [],
 })
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const parseQuestions = (raw: any): VoteQuestion[] | undefined => {
+  const src = raw.questions ?? raw.pertanyaan
+  if (!src) return undefined
+  const arr = typeof src === 'string' ? JSON.parse(src) : src
+  if (!Array.isArray(arr)) return undefined
+  const list = arr.map(normalizeVoteQuestion).filter((x) => x.title)
+  return list.length ? list : undefined
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const normalizeInteraction = (raw: any): Interaction => {
+  const rawOptions: unknown[] = Array.isArray(raw.options) ? raw.options : typeof raw.options === 'string' ? JSON.parse(raw.options) : []
+  return {
+    id: String(raw.id),
+    ownerId: String(raw.ownerId || raw.owner_id || ''),
+    kind: raw.kind as Kind,
+    title: String(raw.title || ''),
+    description: String(raw.description || ''),
+    slug: String(raw.slug || ''),
+    active: Boolean(raw.active),
+    start: String(raw.start || ''),
+    end: String(raw.end || ''),
+    options: rawOptions.map((o) => (typeof o === 'string' ? o : String((o as { label?: unknown })?.label ?? ''))).filter(Boolean),
+    questions: parseQuestions(raw),
+    createdAt: String(raw.createdAt || raw.created_at || new Date().toISOString()),
+    banner: raw.banner,
+  }
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const normalizeResponse = (raw: any): Response => ({
@@ -137,11 +275,16 @@ const normalizeResponse = (raw: any): Response => ({
   iid: String(raw.iid || raw.interaction_id || ''),
   name: raw.name || undefined,
   choice: raw.choice || undefined,
+  choices: raw.choices ? (typeof raw.choices === 'string' ? JSON.parse(raw.choices) : raw.choices) : undefined,
   message: raw.message || undefined,
   status: (raw.status as Status) || 'Baru',
   reply: raw.reply || undefined,
   shared: Boolean(raw.shared),
   at: String(raw.at || raw.created_at || new Date().toISOString()),
+  anonymous: raw.anonymous ? true : undefined,
+  voterKey: raw.voterKey || raw.voter_key || undefined,
+  verifiedVia: raw.verifiedVia || raw.verified_via || undefined,
+  verificationLabel: raw.verificationLabel || raw.verification_label || undefined,
 })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -153,9 +296,9 @@ const normalizeUser = (raw: any): User => ({
   avatar: raw.avatar,
 })
 
-function load<T>(key: string, fallback: T): T {
+function load<T>(key: string, fallback: T, storage: Storage = localStorage): T {
   try {
-    const raw = localStorage.getItem(key)
+    const raw = storage.getItem(key)
     return raw ? (JSON.parse(raw) as T) : fallback
   } catch {
     return fallback
@@ -164,136 +307,212 @@ function load<T>(key: string, fallback: T): T {
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>(() => load('fa_users', seedUsers))
-  const [sessionId, setSessionId] = useState<string | null>(() => load('fa_session', null))
-  const [interactions, setInteractions] = useState<Interaction[]>(() => load('fa_inter', seedInteractions))
-  const [responses, setResponses] = useState<Response[]>(() => load('fa_resp', seedResponses))
+  const [sessionId, setSessionId] = useState<string | null>(() => load('fa_session', null, sessionStorage))
+  const [session, setSession] = useState<SessionInfo | null>(() => load('fa_session_info', null, sessionStorage))
+  const [sessionHistory, setSessionHistory] = useState<SessionHistory>(() => load('fa_session_history', { lastTabClosedAt: null, lastLogoutAt: null }))
+  const [presence, setPresence] = useState<Presence>(() => (typeof document !== 'undefined' && document.visibilityState === 'visible' ? 'online' : 'inactive'))
+  const [interactions, setInteractions] = useState(() => load('fa_inter', seedInteractions))
+  const [responses, setResponses] = useState(() => load('fa_resp', seedResponses))
+  const tabInitRef = useRef(false)
 
   useEffect(() => localStorage.setItem('fa_users', JSON.stringify(users)), [users])
-  useEffect(() => localStorage.setItem('fa_session', JSON.stringify(sessionId)), [sessionId])
+  // Sesi disimpan di sessionStorage dan diakhiri begitu halaman
+  // ditinggalkan (lihat penanganan pagehide/pageshow di bawah): menutup
+  // tab, memuat ulang halaman, atau pindah ke situs lain berarti sesi
+  // berakhir dan pengguna harus login kembali.
+  useEffect(() => sessionStorage.setItem('fa_session', JSON.stringify(sessionId)), [sessionId])
+  useEffect(() => {
+    if (session) sessionStorage.setItem('fa_session_info', JSON.stringify(session))
+    else sessionStorage.removeItem('fa_session_info')
+  }, [session])
+  // Bersihkan sesi warisan versi lama yang tersimpan permanen di localStorage,
+  // agar tidak ada sesi lama yang hidup lagi setelah perubahan ini.
+  useEffect(() => {
+    try {
+      localStorage.removeItem('fa_session')
+      localStorage.removeItem('fa_session_info')
+      localStorage.removeItem('fa_token')
+    } catch {
+      // Penyimpanan tidak tersedia — tidak ada yang perlu dibersihkan.
+    }
+  }, [])
+  useEffect(() => localStorage.setItem('fa_session_history', JSON.stringify(sessionHistory)), [sessionHistory])
   useEffect(() => localStorage.setItem('fa_inter', JSON.stringify(interactions)), [interactions])
   useEffect(() => localStorage.setItem('fa_resp', JSON.stringify(responses)), [responses])
 
-  // Continuous background synchronization with Backend API
+  // --- Kondisi akun saat tab dibuka / ditutup ---------------------------------
+  // Sesi hanya hidup selama halaman ini terbuka (lihat pagehide/pageshow
+  // di bawah): menutup tab, memuat ulang halaman, atau meninggalkan
+  // aplikasi mengakhiri sesi, dan membuka aplikasi lagi berarti harus
+  // login kembali. Blok ini hanya menyegarkan stempel waktu bila masih
+  // ada sesi yang terbaca di tab ini (mis. tab duplikat yang menyalin
+  // sessionStorage, atau sesi yang dipulihkan browser setelah crash),
+  // dan membuatkan info sesi bila ID sesi ada tetapi info sesinya
+  // belum ada.
   useEffect(() => {
-    let isMounted = true
-
-    const syncFromBackend = async () => {
-      const token = localStorage.getItem('fa_token')
-      if (!token) return
-
-      // Verify session via /auth/me
-      const meRes = await apiCall('/auth/me')
-      if (meRes && meRes.ok) {
-        const meData = await meRes.json()
-        if (isMounted && meData?.id) {
-          setSessionId(meData.id)
-        }
+    if (tabInitRef.current) return
+    tabInitRef.current = true
+    const openedAt = nowIso()
+    setSession((prev) => {
+      if (!sessionId) return prev
+      if (prev && prev.userId === sessionId) {
+        return { ...prev, tabOpenedAt: openedAt, lastSeenAt: openedAt }
       }
+      const u = users.find((x) => x.id === sessionId)
+      if (!u) return prev
+      return { ...createSession(u.id, u.provider ?? 'password'), tabOpenedAt: openedAt }
+    })
+    // Hanya dijalankan sekali saat provider dipasang (tab dibuka).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-      // Fetch interactions from /interactions
-      const interRes = await apiCall('/interactions')
-      if (interRes && interRes.ok) {
-        const interData = await interRes.json()
-        if (isMounted && Array.isArray(interData) && interData.length > 0) {
-          setInteractions(interData.map(normalizeInteraction))
-        }
-      }
-
-      // Fetch responses from /responses
-      const respRes = await apiCall('/responses')
-      if (respRes && respRes.ok) {
-        const respData = await respRes.json()
-        if (isMounted && Array.isArray(respData) && respData.length > 0) {
-          setResponses(respData.map(normalizeResponse))
-        }
-      }
-
-      // If administrator, fetch users from /users
-      const usersRes = await apiCall('/users')
-      if (usersRes && usersRes.ok) {
-        const usersData = await usersRes.json()
-        if (isMounted && Array.isArray(usersData) && usersData.length > 0) {
-          setUsers(usersData.map(normalizeUser))
-        }
+  // Tab terlihat / disembunyikan, jendela fokus / tidak fokus → presence + lastSeen.
+  // Halaman dibongkar (pagehide/beforeunload: tab ditutup, halaman dimuat
+  // ulang, atau pindah ke situs lain) → catat waktu tutupnya ke localStorage
+  // secara sinkron, lalu AKHIRI SESI saat itu juga dengan menghapus kunci
+  // sesi dari sessionStorage — membuka aplikasi lagi selalu mulai dari
+  // halaman login. Pengecualian: bila halaman hanya masuk back-forward
+  // cache (pagehide dengan persisted=true), penghapusan ditunda sampai
+  // halaman dipulihkan lagi (lihat onPageShow), karena halaman yang sama
+  // akan hidup kembali.
+  useEffect(() => {
+    const markSeen = (p: Presence) => {
+      setPresence(p)
+      if (p === 'online') setSession((prev) => (prev ? { ...prev, lastSeenAt: nowIso() } : prev))
+    }
+    const onVisibility = () => markSeen(document.visibilityState === 'visible' ? 'online' : 'inactive')
+    const onFocus = () => markSeen('online')
+    const onBlur = () => markSeen('inactive')
+    const endSessionNow = () => {
+      try {
+        sessionStorage.removeItem('fa_session')
+        sessionStorage.removeItem('fa_session_info')
+        sessionStorage.removeItem('fa_token')
+      } catch {
+        // Penyimpanan tidak tersedia — tidak ada sesi yang perlu diakhiri.
       }
     }
+    const onPageHide = (e: Event) => {
+      const closedAt = nowIso()
+      const persisted = (e as PageTransitionEvent).persisted === true
+      try {
+        const history = load<SessionHistory>('fa_session_history', { lastTabClosedAt: null, lastLogoutAt: null })
+        localStorage.setItem('fa_session_history', JSON.stringify({ ...history, lastTabClosedAt: closedAt }))
+        if (persisted) {
+          const info = load<SessionInfo | null>('fa_session_info', null, sessionStorage)
+          if (info) sessionStorage.setItem('fa_session_info', JSON.stringify({ ...info, lastSeenAt: closedAt }))
+        }
+      } catch {
+        // Penyimpanan tidak tersedia — kondisi tab tidak tercatat.
+      }
+      if (!persisted) endSessionNow()
+      setSessionHistory((prev) => ({ ...prev, lastTabClosedAt: closedAt }))
+    }
+    const onPageShow = (e: Event) => {
+      if ((e as PageTransitionEvent).persisted !== true) return
+      // Halaman dipulihkan dari back-forward cache (mis. lewat tombol Back):
+      // pengguna sudah meninggalkan aplikasi, jadi sesi dianggap berakhir —
+      // bersihkan sesi dan keluarkan pengguna ke halaman login.
+      endSessionNow()
+      disableGoogleAutoSelect()
+      setSession(null)
+      setSessionId(null)
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('blur', onBlur)
+    window.addEventListener('pagehide', onPageHide)
+    window.addEventListener('beforeunload', onPageHide)
+    window.addEventListener('pageshow', onPageShow)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('blur', onBlur)
+      window.removeEventListener('pagehide', onPageHide)
+      window.removeEventListener('beforeunload', onPageHide)
+      window.removeEventListener('pageshow', onPageShow)
+    }
+  }, [])
 
-    syncFromBackend()
-    return () => { isMounted = false }
+  // Sinkronisasi antar-tab: data pengguna tersinkron lewat localStorage.
+  // Sesi TIDAK ikut tersinkron — sesi tersimpan di sessionStorage yang
+  // terpisah untuk tiap tab, jadi setiap tab mempunyai sesinya sendiri dan
+  // login/logout di satu tab tidak memengaruhi tab lain.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'fa_users' && e.newValue) setUsers(JSON.parse(e.newValue) as typeof users)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  // Bersihkan info sesi bila ID sesi hilang (logout / akun dihapus).
+  useEffect(() => {
+    if (!sessionId) setSession((prev) => (prev ? null : prev))
   }, [sessionId])
 
   const store = useMemo<Store>(() => {
     const user = users.find((u) => u.id === sessionId) ?? null
+    const startSession = (u: User) => {
+      setSessionId(u.id)
+      setSession(createSession(u.id, u.provider ?? 'password'))
+    }
     return {
       user,
       users,
       interactions,
       responses,
+      session: session && session.userId === sessionId ? session : null,
+      presence,
+      loginStatus: user ? 'masuk' : 'keluar',
+      sessionHistory,
       register: ({ username, email, password }) => {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
         if (!/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
         if (password.length < 8) return 'Password minimal 8 karakter.'
         if (users.some((u) => u.email === email || u.username.toLowerCase() === username.toLowerCase())) return 'Email atau username sudah terdaftar.'
-        const u = { id: uid(), username, email, role: 'User' as Role, password }
+        const u = { id: uid(), username, email, role: 'User' as Role, password, provider: 'password' as AuthProvider }
         setUsers((p) => [...p, u])
-        setSessionId(u.id)
-
-        // Asynchronously register in backend
-        apiCall('/auth/register', {
-          method: 'POST',
-          body: JSON.stringify({ username, email, password, role: 'User' }),
-        }).then(async (res) => {
-          if (res && res.ok) {
-            const data = await res.json()
-            if (data.access_token) {
-              localStorage.setItem('fa_token', data.access_token)
-            }
-          }
-        })
-
+        startSession(u)
         return null
       },
       login: (id, password) => {
         const u = users.find((x) => (x.email === id || x.username === id) && (x as never as { password: string }).password === password)
         if (!u) return 'Email/username atau password salah.'
-        setSessionId(u.id)
-
-        // Asynchronously authenticate with backend
-        apiCall('/auth/login', {
-          method: 'POST',
-          body: JSON.stringify({ id, password }),
-        }).then(async (res) => {
-          if (res && res.ok) {
-            const data = await res.json()
-            if (data.access_token) {
-              localStorage.setItem('fa_token', data.access_token)
-              // Pull fresh server data
-              const [iRes, rRes] = await Promise.all([apiCall('/interactions'), apiCall('/responses')])
-              if (iRes && iRes.ok) {
-                const iData = await iRes.json()
-                if (Array.isArray(iData) && iData.length > 0) setInteractions(iData.map(normalizeInteraction))
-              }
-              if (rRes && rRes.ok) {
-                const rData = await rRes.json()
-                if (Array.isArray(rData) && rData.length > 0) setResponses(rData.map(normalizeResponse))
-              }
-            }
-          }
-        })
-
+        startSession(u)
+        return null
+      },
+      loginWithGoogle: (profile) => {
+        if (!profile.email || !profile.googleId) return 'Profil Google tidak lengkap (email tidak tersedia).'
+        if (!profile.emailVerified) return 'Email Google Anda belum terverifikasi.'
+        const existing = users.find((u) => u.googleId === profile.googleId || u.email.toLowerCase() === profile.email.toLowerCase())
+        if (existing) {
+          // Tautkan akun lama dengan Google & lengkapi foto profil bila belum ada.
+          const linked: User = { ...existing, provider: 'google', googleId: profile.googleId, avatar: existing.avatar ?? profile.picture }
+          setUsers((p) => p.map((u) => (u.id === existing.id ? { ...u, provider: 'google', googleId: profile.googleId, avatar: u.avatar ?? profile.picture } : u)))
+          startSession(linked)
+          return null
+        }
+        const username = usernameFromEmail(profile.email, (c) => users.some((u) => u.username.toLowerCase() === c.toLowerCase()))
+        // Akun Google tidak memakai password lokal: isi dengan nilai acak yang
+        // tidak diketahui siapa pun agar login password tidak bisa menebaknya.
+        const u = { id: uid(), username, email: profile.email, role: 'User' as Role, password: `google:${uid()}${uid()}${uid()}`, provider: 'google' as AuthProvider, googleId: profile.googleId, avatar: profile.picture }
+        setUsers((p) => [...p, u])
+        startSession(u)
         return null
       },
       logout: () => {
-        localStorage.removeItem('fa_token')
+        disableGoogleAutoSelect()
+        setSessionHistory((prev) => ({ ...prev, lastLogoutAt: nowIso() }))
+        setSession(null)
         setSessionId(null)
-        apiCall('/auth/logout', { method: 'POST' })
       },
       adminCreateUser: ({ username, email, password }) => {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
         if (!/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
         if (password.length < 8) return 'Password minimal 8 karakter.'
         if (users.some((u) => u.email === email || u.username.toLowerCase() === username.toLowerCase())) return 'Email atau username sudah terdaftar.'
-        const u = { id: uid(), username, email, role: 'User' as Role, password }
+        const u = { id: uid(), username, email, role: 'User' as Role, password, provider: 'password' as AuthProvider }
         setUsers((p) => [...p, u])
 
         // Asynchronously persist in backend
@@ -362,6 +581,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             start: n.start,
             end: n.end,
             options: n.options,
+            questions: n.questions,
             active: n.active,
           }),
         })
@@ -385,7 +605,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         apiCall(`/interactions/${id}`, { method: 'DELETE' })
       },
       submit: (r) => {
-        const n: Response = { ...r, id: uid(), status: 'Baru', at: new Date().toISOString() }
+        const { verificationToken, ...rest } = r
+        const n: Response = { ...rest, id: uid(), status: 'Baru', at: new Date().toISOString() }
         setResponses((p) => [n, ...p])
 
         // Asynchronously submit through backend public portal
@@ -394,9 +615,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           apiCall(`/public/${targetInter.slug}/submit`, {
             method: 'POST',
             body: JSON.stringify({
-              name: r.name,
-              choice: r.choice,
-              message: r.message,
+              name: rest.name,
+              choice: rest.choice,
+              choices: rest.choices,
+              message: rest.message,
+              verification: rest.voterKey
+                ? { type: rest.verifiedVia, identifier: rest.voterKey, token: verificationToken }
+                : undefined,
             }),
           })
         }
@@ -417,7 +642,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         apiCall(`/responses/${id}`, { method: 'DELETE' })
       },
     }
-  }, [users, sessionId, interactions, responses])
+  }, [users, sessionId, interactions, responses, session, presence, sessionHistory])
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>
 }

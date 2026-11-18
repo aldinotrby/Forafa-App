@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useStore, type Interaction, type Kind, type Response, type Status } from '../services/store'
+import { useStore, type Interaction, type Kind, type Response, type Status, type VoteQuestion } from '../services/store'
 import { MediaUpload } from '../components/MediaUpload'
+import { SessionStatus } from '../components/SessionStatus'
 import { Bar, Btn, Card, Field, KIND, KindBadge, Logo, Paginated, QR, STATUSES, StatusPill, exportCsv, fmtDate, inputCls, publicUrl } from '../components/ui'
 
 type Nav = 'home' | Kind | 'flow'
@@ -44,17 +45,13 @@ export default function UserWorkspace({ asUserId, onBack, adminBanner }: { asUse
           ))}
         </nav>
         <div className="mt-auto hidden space-y-3 lg:block">
-          {adminBanner ? (
+          {adminBanner && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
               <p className="text-xs font-bold uppercase tracking-wider text-amber-600">Melihat sebagai</p>
               <p className="font-semibold text-ink">{adminBanner}</p>
             </div>
-          ) : (
-            <div className="rounded-xl bg-ground p-3 text-sm">
-              <p className="font-semibold">{user!.username}</p>
-              <p className="text-xs text-mute">User</p>
-            </div>
           )}
+          <SessionStatus />
           {onBack ? (
             <Btn variant="ghost" className="w-full" onClick={onBack}>← Kembali ke Admin</Btn>
           ) : (
@@ -112,6 +109,7 @@ function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername }: {
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-brand">{greetSub}</p>
           <h1 className="font-display text-4xl font-extrabold tracking-tight">{kind ? KIND[kind].long : greetLabel}</h1>
+          {!targetUsername && <div className="mt-3"><SessionStatus variant="pill" /></div>}
         </div>
         {kind ? (
           <Btn onClick={() => onCreate(kind)}>+ Buat {KIND[kind].label}</Btn>
@@ -182,7 +180,7 @@ function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername }: {
                 </div>
                 <h3 className="mt-3 font-display text-lg font-bold leading-snug group-hover:text-brand">{i.title}</h3>
                 <p className="mt-1 line-clamp-2 text-sm text-mute">{i.description}</p>
-                <p className="mt-4 text-xs text-mute">{n} respons · /p/{i.slug}</p>
+                <p className="mt-4 text-xs text-mute">{n} respons{i.questions?.length ? ` · ${i.questions.length} pertanyaan` : ''} · /p/{i.slug}</p>
               </button>
             )
           })}
@@ -191,6 +189,17 @@ function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername }: {
     </div>
   )
 }
+
+const jabatanTemplate = (): VoteQuestion[] =>
+  ['Ketua', 'Wakil Ketua', 'Sekretaris', 'Bendahara'].map((title, k) => ({
+    id: `q${k + 1}`,
+    title,
+    active: true,
+    options: [
+      { label: '', active: true },
+      { label: '', active: true },
+    ],
+  }))
 
 function Create({ kind, onClose, onDone, ownerIdOverride }: { kind: Kind; onClose: () => void; onDone: (id: string) => void; ownerIdOverride?: string }) {
   const { addInteraction, user } = useStore()
@@ -203,11 +212,30 @@ function Create({ kind, onClose, onDone, ownerIdOverride }: { kind: Kind; onClos
     options: kind === 'vote' ? ['', ''] : kind === 'feedback' ? ['Umum'] : [] as string[],
     banner: '',
   })
+  /** Voting multi-pertanyaan: satu link berisi beberapa pertanyaan (mis. per jabatan). */
+  const [multi, setMulti] = useState(false)
+  const [questions, setQuestions] = useState<VoteQuestion[]>(jabatanTemplate().slice(0, 2))
   const label = kind === 'vote' ? 'Pilihan' : 'Topik form (custom)'
   const setOpt = (k: number, v: string) => setF((p) => ({ ...p, options: p.options.map((o, j) => (j === k ? v : o)) }))
+  const setQ = (k: number, patch: Partial<VoteQuestion>) => setQuestions((p) => p.map((q, j) => (j === k ? { ...q, ...patch } : q)))
+  const setQOpt = (k: number, j: number, patch: Partial<VoteQuestion['options'][number]>) =>
+    setQuestions((p) => p.map((q, qi) => (qi === k ? { ...q, options: q.options.map((o, oj) => (oj === j ? { ...o, ...patch } : o)) } : q)))
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (kind === 'vote' && multi) {
+      const qs = questions
+        .map((q, k) => ({ ...q, id: `q${k + 1}`, title: q.title.trim(), options: q.options.map((o) => ({ ...o, label: o.label.trim() })).filter((o) => o.label) }))
+        .filter((q) => q.title)
+      if (qs.length < 2) return alert('Voting multi-pertanyaan butuh minimal 2 pertanyaan.')
+      for (const q of qs) {
+        if (q.options.length < 2) return alert(`Pertanyaan "${q.title}" butuh minimal 2 pilihan.`)
+        if (!q.options.some((o) => o.active)) return alert(`Pertanyaan "${q.title}" butuh minimal 1 pilihan aktif.`)
+      }
+      const options = qs.flatMap((q) => q.options.map((o) => o.label))
+      onDone(addInteraction({ kind, title: f.title, description: f.description, start: f.start, end: f.end, options, questions: qs, active: true, banner: f.banner }, ownerIdOverride).id)
+      return
+    }
     const options = f.options.map((o) => o.trim()).filter(Boolean)
     if (kind === 'vote' && options.length < 2) return alert('Voting butuh minimal 2 pilihan.')
     onDone(addInteraction({ kind, title: f.title, description: f.description, start: f.start, end: f.end, options, active: true, banner: f.banner }, ownerIdOverride).id)
@@ -225,7 +253,50 @@ function Create({ kind, onClose, onDone, ownerIdOverride }: { kind: Kind; onClos
         />
         <Field label="Judul"><input className={inputCls} required value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></Field>
         <Field label="Deskripsi"><textarea className={inputCls} rows={3} required value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
-        {kind !== 'anon' && (
+        {kind === 'vote' && (
+          <div className="space-y-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-mute">Jumlah pertanyaan</span>
+            <div className="flex gap-2">
+              <Btn type="button" variant={!multi ? 'primary' : 'ghost'} className="flex-1 py-2" onClick={() => setMulti(false)}>Satu pertanyaan</Btn>
+              <Btn type="button" variant={multi ? 'primary' : 'ghost'} className="flex-1 py-2" onClick={() => setMulti(true)}>Beberapa pertanyaan</Btn>
+            </div>
+            {multi && <p className="text-xs text-mute">Satu link untuk beberapa pertanyaan — mis. Ketua, Wakil Ketua, Sekretaris, Bendahara. Pengunjung menjawab semuanya dalam satu kunjungan.</p>}
+          </div>
+        )}
+        {kind !== 'anon' && multi && kind === 'vote' ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-mute">Pertanyaan ({questions.length})</span>
+              <Btn type="button" variant="ghost" className="px-2 py-1 text-xs" onClick={() => setQuestions(jabatanTemplate())}>Pakai template jabatan</Btn>
+            </div>
+            {questions.map((q, k) => (
+              <div key={k} className="space-y-2 rounded-xl border border-line bg-ground/50 p-3">
+                <div className="flex items-center gap-2">
+                  <input className={inputCls} value={q.title} placeholder={`Pertanyaan ${k + 1} — mis. Ketua`} onChange={(e) => setQ(k, { title: e.target.value })} />
+                  <label className="flex shrink-0 cursor-pointer items-center gap-1 text-xs font-semibold">
+                    <input type="checkbox" className="accent-brand" checked={q.active} onChange={(e) => setQ(k, { active: e.target.checked })} /> Aktif
+                  </label>
+                  {questions.length > 2 && (
+                    <Btn type="button" variant="ghost" className="shrink-0 px-2 py-1" onClick={() => setQuestions((p) => p.filter((_, j) => j !== k))} aria-label="Hapus pertanyaan">✕</Btn>
+                  )}
+                </div>
+                {q.options.map((o, j) => (
+                  <div key={j} className="flex items-center gap-2">
+                    <input className={inputCls} value={o.label} placeholder={`Pilihan ${j + 1}`} onChange={(e) => setQOpt(k, j, { label: e.target.value })} />
+                    <label className="flex shrink-0 cursor-pointer items-center gap-1 text-xs font-semibold">
+                      <input type="checkbox" className="accent-brand" checked={o.active} onChange={(e) => setQOpt(k, j, { active: e.target.checked })} /> Aktif
+                    </label>
+                    {q.options.length > 2 && (
+                      <Btn type="button" variant="ghost" className="shrink-0 px-2 py-1" onClick={() => setQ(k, { options: q.options.filter((_, oj) => oj !== j) })} aria-label="Hapus pilihan">✕</Btn>
+                    )}
+                  </div>
+                ))}
+                <Btn type="button" variant="ghost" className="px-2 py-1 text-xs" onClick={() => setQ(k, { options: [...q.options, { label: '', active: true }] })}>+ Tambah pilihan</Btn>
+              </div>
+            ))}
+            <Btn type="button" variant="ghost" onClick={() => setQuestions((p) => [...p, { id: `q${p.length + 1}`, title: '', active: true, options: [{ label: '', active: true }, { label: '', active: true }] }])}>+ Tambah pertanyaan</Btn>
+          </div>
+        ) : kind !== 'anon' && (
           <div className="space-y-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-mute">{label}</span>
             {f.options.map((o, k) => (
@@ -298,6 +369,28 @@ function Detail({ it, back }: { it: Interaction; back: () => void }) {
               </div>
             </div>
             <Field label="Deskripsi"><textarea className={inputCls} rows={2} value={it.description} onChange={(e) => updateInteraction(it.id, { description: e.target.value })} /></Field>
+            {it.questions?.length ? (
+              <div className="space-y-3">
+                <h3 className="text-sm font-bold">Pertanyaan &amp; pilihan — aktif / nonaktif</h3>
+                <p className="text-xs text-mute">Pertanyaan nonaktif disembunyikan dari pengunjung dan tidak dihitung progres. Pilihan nonaktif tetap tampil tapi tidak bisa dipilih.</p>
+                {it.questions.map((q) => (
+                  <div key={q.id} className="space-y-2 rounded-xl border border-line bg-ground/50 p-3">
+                    <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
+                      <input type="checkbox" className="size-4 accent-brand" checked={q.active} onChange={(e) => updateInteraction(it.id, { questions: it.questions!.map((x) => (x.id === q.id ? { ...x, active: e.target.checked } : x)) })} />
+                      {q.title}
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {q.options.map((o) => (
+                        <label key={o.label} className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${o.active ? 'border-vote/40 bg-vote-soft text-vote' : 'border-line bg-white text-mute'}`}>
+                          <input type="checkbox" className="accent-vote" checked={o.active} onChange={(e) => updateInteraction(it.id, { questions: it.questions!.map((x) => (x.id === q.id ? { ...x, options: x.options.map((y) => (y.label === o.label ? { ...y, active: e.target.checked } : y)) } : x)) })} />
+                          {o.label}{o.active ? '' : ' (Nonaktif)'}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <Btn variant="danger" onClick={() => { if (confirm('Hapus interaksi beserta seluruh responsnya?')) { removeInteraction(it.id); back() } }}>Hapus interaksi</Btn>
           </Card>
         </div>
@@ -308,6 +401,29 @@ function Detail({ it, back }: { it: Interaction; back: () => void }) {
 }
 
 function Stats({ it, rs }: { it: Interaction; rs: Response[] }) {
+  if (it.kind === 'vote' && it.questions?.length) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-mute">{rs.length} pengunjung mengisi voting multi-pertanyaan ini.</p>
+        {it.questions.map((q) => {
+          const by = q.options
+            .map((o) => ({ o, n: rs.filter((r) => r.choices?.[q.id] === o.label).length }))
+            .sort((a, b) => b.n - a.n)
+          return (
+            <Card key={q.id} className="space-y-5 p-6">
+              <div className="flex items-baseline justify-between gap-2">
+                <h2 className="font-display text-lg font-bold">{q.title}</h2>
+                <span className={`text-xs font-semibold ${q.active ? 'text-emerald-600' : 'text-mute'}`}>{q.active ? '● Aktif' : '○ Nonaktif'}</span>
+              </div>
+              {by.map((x, k) => (
+                <Bar key={x.o.label} label={`${k === 0 && x.n > 0 ? '🏆 ' : ''}${x.o.label}${x.o.active ? '' : ' (Nonaktif)'}`} value={x.n} total={rs.length} color="bg-vote" />
+              ))}
+            </Card>
+          )
+        })}
+      </div>
+    )
+  }
   if (it.kind === 'vote') {
     const by = it.options.map((o) => ({ o, n: rs.filter((r) => r.choice === o).length })).sort((a, b) => b.n - a.n)
     return (
@@ -339,6 +455,15 @@ function Stats({ it, rs }: { it: Interaction; rs: Response[] }) {
   )
 }
 
+function VerifiedChip({ r }: { r: Response }) {
+  if (!r.verifiedVia) return null
+  return (
+    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700" title={r.verificationLabel}>
+      ✓ {r.verifiedVia === 'google' ? 'Google' : 'WhatsApp'}{r.verificationLabel ? ` · ${r.verificationLabel}` : ''}
+    </span>
+  )
+}
+
 function Responses({ it, rs }: { it: Interaction; rs: Response[] }) {
   const { patchResponse, removeResponse } = useStore()
   const [q, setQ] = useState('')
@@ -356,9 +481,23 @@ function Responses({ it, rs }: { it: Interaction; rs: Response[] }) {
         )}
         <Btn variant="ghost" className="ml-auto" onClick={() => exportCsv(it.slug, list)}>Export CSV</Btn>
       </div>
-      <Paginated items={list} render={(r) => it.kind === 'vote' ? (
-        <div key={r.id} className="flex items-center gap-3 py-3 text-sm">
-          <span className="flex-1 font-semibold">{r.name}</span>
+      <Paginated items={list} render={(r) => it.kind === 'vote' && it.questions?.length ? (
+        <div key={r.id} className="space-y-2 py-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="flex-1 font-semibold">{r.name ?? 'Anonim'}{r.anonymous && <span className="ml-2 rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}</span>
+            <VerifiedChip r={r} />
+            <time className="w-28 text-right text-xs text-mute">{fmtDate(r.at)}</time>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {it.questions.map((q) => (
+              <span key={q.id} className="rounded-full bg-vote-soft px-3 py-0.5 text-xs font-semibold text-vote">{q.title}: {r.choices?.[q.id] ?? '—'}</span>
+            ))}
+          </div>
+        </div>
+      ) : it.kind === 'vote' ? (
+        <div key={r.id} className="flex flex-wrap items-center gap-2 py-3 text-sm">
+          <span className="flex-1 font-semibold">{r.name ?? 'Anonim'}{r.anonymous && <span className="ml-2 rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}</span>
+          <VerifiedChip r={r} />
           <span className="rounded-full bg-vote-soft px-3 py-0.5 text-xs font-semibold text-vote">{r.choice}</span>
           <time className="w-28 text-right text-xs text-mute">{fmtDate(r.at)}</time>
         </div>
@@ -372,14 +511,17 @@ function Responses({ it, rs }: { it: Interaction; rs: Response[] }) {
 function ResponseRow({ r, anon, onPatch, onDelete }: { r: Response; anon: boolean; onPatch: (p: Partial<Response>) => void; onDelete: () => void }) {
   const [reply, setReply] = useState(r.reply ?? '')
   const [open, setOpen] = useState(false)
+  // Anonim berlaku per-interaksi ('anon') atau per-respons (pengirim memilih Anonymous di form publik).
+  const isAnon = anon || !!r.anonymous || !r.name
   return (
     <div className="space-y-2 py-4 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <b>{anon ? 'Anonim' : r.name}</b>
+        <b>{isAnon ? 'Anonim' : r.name}</b>
+        {isAnon && <span className="rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}
         <time className="text-xs text-mute">{fmtDate(r.at)}</time>
-        {!anon && <StatusPill s={r.status} />}
+        {!isAnon && <StatusPill s={r.status} />}
         <div className="ml-auto flex gap-2">
-          {!anon && (
+          {!isAnon && (
             <select aria-label="Ubah status" className="rounded-md border border-line bg-white px-2 py-1 text-xs" value={r.status} onChange={(e) => onPatch({ status: e.target.value as Status })}>
               {STATUSES.map((s) => <option key={s}>{s}</option>)}
             </select>
@@ -456,7 +598,7 @@ function Flow() {
       <Card className="p-6">
         <h2 className="font-display text-lg font-bold">Alur pengunjung (tanpa akun)</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl bg-vote-soft p-4 text-sm"><b className="text-vote">Voting</b><p className="mt-1">Buka link → isi nama → pilih satu → kirim vote</p></div>
+          <div className="rounded-xl bg-vote-soft p-4 text-sm"><b className="text-vote">Voting</b><p className="mt-1">Buka link → verifikasi Google / WhatsApp OTP → jawab tiap pertanyaan (Ketua, Wakil, …) — bila ragu, pakai "Bantuan memilih voting yang tepat" → kirim vote</p></div>
           <div className="rounded-xl bg-fb-soft p-4 text-sm"><b className="text-fb">Kritik &amp; Saran</b><p className="mt-1">Buka link → isi nama → tulis masukan → kirim</p></div>
           <div className="rounded-xl bg-anon-soft p-4 text-sm"><b className="text-anon">Anonim</b><p className="mt-1">Buka link → tulis pesan → kirim (tanpa identitas)</p></div>
         </div>

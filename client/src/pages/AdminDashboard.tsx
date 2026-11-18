@@ -362,9 +362,17 @@ function AdminNotifications({ unseen, onOpenResponse, onMarkAll }: {
     ...[...responses].sort((a, b) => +new Date(b.at) - +new Date(a.at)).filter((r) => !unseenIds.has(r.id)),
   ].slice(0, 12)
   const [filter, setFilter] = useState<'Semua' | Kind>('Semua')
+  const [q, setQ] = useState('')
   const kindOf = (r: Response) => findInteraction(r.iid)?.kind
   const unseenByKind = (k: Kind) => unseen.filter((r) => kindOf(r) === k).length
-  const filtered = shown.filter((r) => filter === 'Semua' || kindOf(r) === filter)
+  const filtered = shown
+    .filter((r) => filter === 'Semua' || kindOf(r) === filter)
+    .filter((r) => {
+      const needle = q.trim().toLowerCase()
+      if (!needle) return true
+      const hay = `${r.name ?? 'Anonim'} ${findInteraction(r.iid)?.title ?? ''}`.toLowerCase()
+      return hay.includes(needle)
+    })
   const filterLabel = filter === 'Semua' ? 'Semua' : filter === 'vote' ? 'voting' : filter === 'feedback' ? 'kritik & saran' : 'pesan anonim'
 
   return (
@@ -399,9 +407,21 @@ function AdminNotifications({ unseen, onOpenResponse, onMarkAll }: {
         })}
       </div>
 
+      <input
+        className={`${inputCls} max-w-sm`}
+        placeholder="Cari nama pengisi atau judul link…"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        aria-label="Cari notifikasi"
+      />
+
       {filtered.length === 0 ? (
         <Card className="p-10 text-center text-sm text-mute">
-          {shown.length === 0 ? 'Belum ada aktivitas di link pengguna mana pun.' : `Tidak ada notifikasi ${filterLabel}.`}
+          {shown.length === 0
+            ? 'Belum ada aktivitas di link pengguna mana pun.'
+            : q.trim()
+              ? `Tidak ada notifikasi yang cocok dengan “${q.trim()}”.`
+              : `Tidak ada notifikasi ${filterLabel}.`}
         </Card>
       ) : (
         <Card className="divide-y divide-line px-5">

@@ -242,10 +242,12 @@ function Notifications({ unseen, resp, onOpenResponse, onMarkAll }: {
   ].slice(0, 12)
   const [filter, setFilter] = useState<'Semua' | Kind>('Semua')
   const [q, setQ] = useState('')
+  const [onlyNew, setOnlyNew] = useState(false)
   const kindOf = (r: Response) => findInteraction(r.iid)?.kind
   const unseenByKind = (k: Kind) => unseen.filter((r) => kindOf(r) === k).length
   const filtered = shown
     .filter((r) => filter === 'Semua' || kindOf(r) === filter)
+    .filter((r) => !onlyNew || unseenIds.has(r.id))
     .filter((r) => {
       const needle = q.trim().toLowerCase()
       if (!needle) return true
@@ -286,13 +288,20 @@ function Notifications({ unseen, resp, onOpenResponse, onMarkAll }: {
         })}
       </div>
 
-      <input
-        className={`${inputCls} max-w-sm`}
-        placeholder="Cari nama pengisi atau judul link…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        aria-label="Cari notifikasi"
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          className={`${inputCls} max-w-sm flex-1`}
+          placeholder="Cari nama pengisi atau judul link…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          aria-label="Cari notifikasi"
+        />
+        <button onClick={() => setOnlyNew(!onlyNew)} aria-pressed={onlyNew}
+          className={`shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-semibold ${onlyNew ? 'border-ink bg-ink text-white' : 'border-line bg-white text-mute hover:text-ink'}`}>
+          {onlyNew ? '✓ ' : ''}Hanya yang belum dibaca
+          {unseen.length > 0 && <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${onlyNew ? 'bg-white/20 text-white' : 'bg-red-100 text-red-700'}`}>{unseen.length}</span>}
+        </button>
+      </div>
 
       {filtered.length === 0 ? (
         <Card className="p-10 text-center text-sm text-mute">
@@ -300,7 +309,9 @@ function Notifications({ unseen, resp, onOpenResponse, onMarkAll }: {
             ? 'Belum ada aktivitas di link Anda.'
             : q.trim()
               ? `Tidak ada notifikasi yang cocok dengan “${q.trim()}”.`
-              : `Tidak ada notifikasi ${filterLabel}.`}
+              : onlyNew
+                ? 'Tidak ada respons yang belum dibaca.'
+                : `Tidak ada notifikasi ${filterLabel}.`}
         </Card>
       ) : (
         <Card className="divide-y divide-line px-5">

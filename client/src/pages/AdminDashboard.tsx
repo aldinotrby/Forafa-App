@@ -361,6 +361,11 @@ function AdminNotifications({ unseen, onOpenResponse, onMarkAll }: {
     ...unseen,
     ...[...responses].sort((a, b) => +new Date(b.at) - +new Date(a.at)).filter((r) => !unseenIds.has(r.id)),
   ].slice(0, 12)
+  const [filter, setFilter] = useState<'Semua' | Kind>('Semua')
+  const kindOf = (r: Response) => findInteraction(r.iid)?.kind
+  const unseenByKind = (k: Kind) => unseen.filter((r) => kindOf(r) === k).length
+  const filtered = shown.filter((r) => filter === 'Semua' || kindOf(r) === filter)
+  const filterLabel = filter === 'Semua' ? 'Semua' : filter === 'vote' ? 'voting' : filter === 'feedback' ? 'kritik & saran' : 'pesan anonim'
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -375,11 +380,32 @@ function AdminNotifications({ unseen, onOpenResponse, onMarkAll }: {
         {unseen.length > 0 && <Btn variant="ghost" onClick={onMarkAll}>Tandai semua sudah dibaca</Btn>}
       </header>
 
-      {shown.length === 0 ? (
-        <Card className="p-10 text-center text-sm text-mute">Belum ada aktivitas di link pengguna mana pun.</Card>
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Filter jenis notifikasi">
+        {([
+          { id: 'Semua' as const, label: 'Semua' },
+          { id: 'vote' as Kind, label: 'Voting' },
+          { id: 'feedback' as Kind, label: 'Kritik & Saran' },
+          { id: 'anon' as Kind, label: 'Pesan Anonim' },
+        ]).map((f) => {
+          const n = f.id === 'Semua' ? unseen.length : unseenByKind(f.id)
+          const active = filter === f.id
+          return (
+            <button key={f.id} onClick={() => setFilter(f.id)} aria-pressed={active}
+              className={`rounded-full border px-3.5 py-1.5 text-sm font-semibold ${active ? 'border-ink bg-ink text-white' : 'border-line bg-white text-mute hover:text-ink'}`}>
+              {f.id !== 'Semua' && <span className="mr-1.5">{KIND[f.id].icon}</span>}{f.label}
+              {n > 0 && <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${active ? 'bg-white/20 text-white' : 'bg-red-100 text-red-700'}`}>{n}</span>}
+            </button>
+          )
+        })}
+      </div>
+
+      {filtered.length === 0 ? (
+        <Card className="p-10 text-center text-sm text-mute">
+          {shown.length === 0 ? 'Belum ada aktivitas di link pengguna mana pun.' : `Tidak ada notifikasi ${filterLabel}.`}
+        </Card>
       ) : (
         <Card className="divide-y divide-line px-5">
-          {shown.map((r) => {
+          {filtered.map((r) => {
             const it = findInteraction(r.iid)
             if (!it) return null
             const owner = users.find((u) => u.id === it.ownerId)

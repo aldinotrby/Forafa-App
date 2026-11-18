@@ -243,9 +243,13 @@ function Notifications({ unseen, resp, onOpenResponse, onMarkAll }: {
   const [filter, setFilter] = useState<'Semua' | Kind>('Semua')
   const [q, setQ] = useState('')
   const [onlyNew, setOnlyNew] = useState(false)
+  const [sort, setSort] = useState<'terbaru' | 'terlama'>('terbaru')
   const kindOf = (r: Response) => findInteraction(r.iid)?.kind
   const unseenByKind = (k: Kind) => unseen.filter((r) => kindOf(r) === k).length
-  const filtered = shown
+  /** 'Terbaru dulu' (bawaan): respons baru di atas, lalu riwayat terbaru.
+   *  'Terlama dulu': seluruh daftar urut kronologis dari yang paling lama. */
+  const ordered = sort === 'terbaru' ? shown : [...shown].sort((a, b) => +new Date(a.at) - +new Date(b.at))
+  const filtered = ordered
     .filter((r) => filter === 'Semua' || kindOf(r) === filter)
     .filter((r) => !onlyNew || unseenIds.has(r.id))
     .filter((r) => {
@@ -301,6 +305,10 @@ function Notifications({ unseen, resp, onOpenResponse, onMarkAll }: {
           {onlyNew ? '✓ ' : ''}Hanya yang belum dibaca
           {unseen.length > 0 && <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${onlyNew ? 'bg-white/20 text-white' : 'bg-red-100 text-red-700'}`}>{unseen.length}</span>}
         </button>
+        <select className={`${inputCls} w-40 shrink-0`} value={sort} onChange={(e) => setSort(e.target.value as never)} aria-label="Urutan daftar">
+          <option value="terbaru">Terbaru dulu</option>
+          <option value="terlama">Terlama dulu</option>
+        </select>
       </div>
 
       {filtered.length === 0 ? (

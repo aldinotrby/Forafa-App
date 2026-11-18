@@ -471,18 +471,41 @@ Modul ini mengimplementasikan pemisahan fisik antara **Data Jawaban Voting** (ta
 * **Response `201 Created` (Jika Sukses & Valid)**:
   ```json
   {
-    "id": "r_9988aabb",
-    "interaction_id": "i4",
-    "name": "Budi Santoso",
-    "is_anonymous": false,
-    "choice": "Ketua: Pak Suryo, Wakil: Bu Ratna, Sekretaris: Bu Ani, Bendahara: Bu Dewi",
-    "status": "Baru",
-    "answers": [
-      { "question_id": "vq_1", "role_key": "ketua", "role_label": "Ketua", "choice": "Pak Suryo" },
-      { "question_id": "vq_2", "role_key": "wakil", "role_label": "Wakil Ketua", "choice": "Bu Ratna" },
-      { "question_id": "vq_3", "role_key": "sekretaris", "role_label": "Sekretaris", "choice": "Bu Ani" },
-      { "question_id": "vq_4", "role_key": "bendahara", "role_label": "Bendahara", "choice": "Bu Dewi" }
-    ]
+    "message": "Tanggapan berhasil dikirim.",
+    "response": {
+      "id": "r_9988aabb",
+      "interaction_id": "i4",
+      "name": "Budi Santoso",
+      "is_anonymous": false,
+      "choice": "Ketua: Pak Suryo, Wakil: Bu Ratna, Sekretaris: Bu Ani, Bendahara: Bu Dewi",
+      "status": "Baru",
+      "answers": [
+        {
+          "question_id": "vq_1",
+          "role_key": "ketua",
+          "role_label": "Ketua",
+          "choice": "Pak Suryo"
+        },
+        {
+          "question_id": "vq_2",
+          "role_key": "wakil",
+          "role_label": "Wakil Ketua",
+          "choice": "Bu Ratna"
+        },
+        {
+          "question_id": "vq_3",
+          "role_key": "sekretaris",
+          "role_label": "Sekretaris",
+          "choice": "Bu Ani"
+        },
+        {
+          "question_id": "vq_4",
+          "role_key": "bendahara",
+          "role_label": "Bendahara",
+          "choice": "Bu Dewi"
+        }
+      ]
+    }
   }
   ```
 
@@ -492,6 +515,20 @@ Modul ini mengimplementasikan pemisahan fisik antara **Data Jawaban Voting** (ta
 
 ### 7.1 Overview Statistik Platform (Admin Only)
 * **Method & URL**: `GET /api/v1/analytics/overview`
+* **Response `200 OK`**:
+  ```json
+  {
+    "total_users": 2,
+    "total_interactions": 5,
+    "total_responses": 18,
+    "by_kind": {
+      "vote": { "total_interactions": 2, "total_responses": 12 },
+      "feedback": { "total_interactions": 2, "total_responses": 4 },
+      "anon": { "total_interactions": 1, "total_responses": 2 }
+    },
+    "recent_responses": [...]
+  }
+  ```
 
 ### 7.2 Statistik Personal User (`/api/v1/analytics/user-stats`)
 * **Method & URL**: `GET /api/v1/analytics/user-stats`

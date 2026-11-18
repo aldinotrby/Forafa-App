@@ -134,7 +134,24 @@ class Interaction {
         return array_map([self::class, 'format'], $stmt->fetchAll());
     }
 
+    /**
+     * Merge be/server: kolom recommendation_enabled wajib ada sebelum
+     * create()/update() menyentuhnya. DB baru sudah memilikinya via
+     * database.sql; helper ini menambalnya pada DB lama tanpa setup ulang.
+     */
+    private static function ensureRecommendationColumn(PDO $db): void {
+        try {
+            $has = $db->query("SHOW COLUMNS FROM `interactions` LIKE 'recommendation_enabled'")->fetch();
+            if (!$has) {
+                $db->exec("ALTER TABLE `interactions` ADD COLUMN `recommendation_enabled` TINYINT(1) NOT NULL DEFAULT 0 AFTER `options`");
+            }
+        } catch (Throwable $e) {
+            // Biarkan INSERT/UPDATE yang memutuskan; setup.php adalah jalan utama.
+        }
+    }
+
     public static function create(PDO $db, array $data, string $ownerId, ?string $customId = null): array {
+        self::ensureRecommendationColumn($db);
         $id = $customId ?? ('i_' . bin2hex(random_bytes(4)));
         $baseSlug = !empty($data['slug']) ? Slug::create($data['slug']) : Slug::create($data['title']);
         $finalSlug = Slug::makeUnique($db, $baseSlug);
@@ -209,6 +226,7 @@ class Interaction {
             $params[':options'] = is_string($opts) ? $opts : json_encode(array_values((array)$opts), JSON_UNESCAPED_UNICODE);
         }
         if (array_key_exists('recommendation_enabled', $data)) {
+            self::ensureRecommendationColumn($db);
             $fields[] = "recommendation_enabled = :recommendation_enabled";
             $params[':recommendation_enabled'] = !empty($data['recommendation_enabled']) ? 1 : 0;
         }

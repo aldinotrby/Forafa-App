@@ -73,7 +73,7 @@ return [
     ],
     'db' => [
         'host' => env('DB_HOST', '127.0.0.1'),
-        'port' => (int)env('DB_PORT', 3306),
+        'port' => (int) env('DB_PORT', 3306),
         'database' => env('DB_DATABASE', 'forafa_db'),
         'username' => env('DB_USERNAME', 'root'),
         'password' => env('DB_PASSWORD', ''),
@@ -81,7 +81,7 @@ return [
     ],
     'jwt' => [
         'secret' => env('JWT_SECRET', 'forafa_secret_key_native_php_2026_change_in_production'),
-        'expire_minutes' => (int)env('JWT_EXPIRE_MINUTES', 1440),
+        'expire_minutes' => (int) env('JWT_EXPIRE_MINUTES', 1440),
     ],
     'session' => [
         'lifetime_minutes' => (int)env('SESSION_LIFETIME_MINUTES', 1440),

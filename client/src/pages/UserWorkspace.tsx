@@ -699,13 +699,24 @@ function ResponseRow({ r, anon, isNew, onPatch, onDelete }: { r: Response; anon:
         {isNew && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">BARU</span>}
         {isAnon && <span className="rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}
         <time className="text-xs text-mute">{fmtDate(r.at)}</time>
-        {!isAnon && <StatusPill s={r.status} />}
-        <div className="ml-auto flex gap-2">
-          {!isAnon && (
-            <select aria-label="Ubah status" className="rounded-md border border-line bg-white px-2 py-1 text-xs" value={r.status} onChange={(e) => onPatch({ status: e.target.value as Status })}>
+        {/* Status tetap ditampilkan & bisa diubah pemilik link untuk pesan
+            anonim juga: yang disembunyikan hanya nama pengirim, bukan
+            kontrol statusnya. */}
+        <StatusPill s={r.status} />
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs font-semibold text-mute">
+            Update Status
+            <select aria-label="Update status" className="rounded-md border border-line bg-white px-2 py-1 text-xs font-semibold text-ink" value={r.status} onChange={(e) => onPatch({ status: e.target.value as Status })}>
               {STATUSES.map((s) => <option key={s}>{s}</option>)}
             </select>
-          )}
+          </label>
+          <button
+            className={`text-xs font-semibold hover:underline ${r.status === 'Selesai' ? 'text-emerald-700' : 'text-brand'}`}
+            disabled={r.status === 'Selesai'}
+            onClick={() => onPatch({ status: 'Selesai' })}
+          >
+            {r.status === 'Selesai' ? '✓ Selesai' : 'Selesai'}
+          </button>
           <button className="text-xs font-semibold text-brand hover:underline" onClick={() => { setOpen(!open); if (r.status === 'Baru') onPatch({ status: 'Dibaca' }) }}>Balas</button>
           <button className="text-xs font-semibold text-mute hover:text-ink" onClick={() => onPatch({ shared: !r.shared })}>{r.shared ? '✓ Dibagikan' : 'Share'}</button>
           <button className="text-xs font-semibold text-red-700 hover:underline" onClick={onDelete}>Hapus</button>
@@ -778,9 +789,9 @@ function Flow() {
       <Card className="p-6">
         <h2 className="font-display text-lg font-bold">Alur pengunjung (tanpa akun)</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl bg-vote-soft p-4 text-sm"><b className="text-vote">Voting</b><p className="mt-1">Buka link → verifikasi Google / WhatsApp OTP → jawab tiap pertanyaan (Ketua, Wakil, …) — bila ragu, pakai "Bantuan memilih voting yang tepat" → kirim vote</p></div>
-          <div className="rounded-xl bg-fb-soft p-4 text-sm"><b className="text-fb">Kritik &amp; Saran</b><p className="mt-1">Buka link → isi nama → tulis masukan → kirim</p></div>
-          <div className="rounded-xl bg-anon-soft p-4 text-sm"><b className="text-anon">Anonim</b><p className="mt-1">Buka link → tulis pesan → kirim (tanpa identitas)</p></div>
+          <div className="rounded-xl bg-vote-soft p-4 text-sm"><b className="text-vote">Voting</b><p className="mt-1">Buka link → verifikasi Google / WhatsApp OTP di awal → jawab tiap pertanyaan (Ketua, Wakil, …) — bila ragu, pakai "Bantuan memilih voting yang tepat" → kirim vote</p></div>
+          <div className="rounded-xl bg-fb-soft p-4 text-sm"><b className="text-fb">Kritik &amp; Saran</b><p className="mt-1">Buka link → verifikasi Google / WhatsApp OTP di awal → isi nama → tulis masukan → kirim, lalu pantau status &amp; balasan di Riwayat Saya</p></div>
+          <div className="rounded-xl bg-anon-soft p-4 text-sm"><b className="text-anon">Anonim</b><p className="mt-1">Buka link → verifikasi Google / WhatsApp OTP di awal → tulis pesan → kirim (tetap tampil sebagai Anonim ke pemilik link) → pantau status &amp; balasan di Riwayat Saya</p></div>
         </div>
         <p className="mt-4 text-sm text-mute">
           Status respons: <StatusPill s="Baru" /> → <StatusPill s="Dibaca" /> → <StatusPill s="Diproses" /> → <StatusPill s="Selesai" />

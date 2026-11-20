@@ -89,12 +89,17 @@ function GoogleIcon() {
 }
 
 /**
- * Gerbang verifikasi sebelum voting: 1 akun Google / 1 nomor WhatsApp = 1 suara.
- * Berlaku untuk semua voting (satu maupun multi-pertanyaan). Feedback & pesan
- * anonim tidak melewati gerbang ini.
+ * Gerbang verifikasi sebelum mengisi link: 1 akun Google / 1 nomor
+ * WhatsApp = 1 identitas pengisi. Berlaku untuk SEMUA jenis link
+ * (voting, kritik & saran, pesan anonim) — verifikasi dilakukan di awal,
+ * sebelum form diisi. Verifikasi ini hanya menautkan kiriman ke Riwayat
+ * Saya milik pengisi (supaya status & balasan bisa dipantau); untuk pesan
+ * anonim, pemilik link tetap hanya melihat "Anonim" tanpa nama/nomor/email.
+ * Batas satu kiriman per identitas hanya berlaku untuk voting.
  */
-function VerificationGate({ slug, onVerified, onAlreadyVoted }: {
+function VerificationGate({ slug, kind, onVerified, onAlreadyVoted }: {
   slug: string
+  kind: 'vote' | 'feedback' | 'anon'
   onVerified: (v: VerifiedVoter) => void
   onAlreadyVoted: (message: string) => void
 }) {
@@ -169,7 +174,14 @@ function VerificationGate({ slug, onVerified, onAlreadyVoted }: {
     setSending(false)
     if (!res.ok) {
       if (res.alreadyVoted) {
-        onAlreadyVoted(res.error ?? 'Nomor WhatsApp ini sudah pernah digunakan untuk mengisi voting ini. Setiap nomor hanya dapat mengisi satu kali.')
+        // Batas satu kiriman per identitas hanya berlaku untuk voting.
+        // Untuk kritik & saran / pesan anonim, tetap di gerbang dengan
+        // pesan yang jelas — jangan alihkan ke layar "sudah voting".
+        if (kind === 'vote') {
+          onAlreadyVoted(res.error ?? 'Nomor WhatsApp ini sudah pernah digunakan untuk mengisi voting ini. Setiap nomor hanya dapat mengisi satu kali.')
+          return
+        }
+        setError('Nomor WhatsApp ini sudah pernah mengisi link ini. Gunakan nomor atau akun Google lain, atau buka Riwayat Saya untuk melihat status & balasan kiriman Anda.')
         return
       }
       // Notifikasi gagal verifikasi: pesan backend ditampilkan apa adanya.
@@ -218,9 +230,11 @@ function VerificationGate({ slug, onVerified, onAlreadyVoted }: {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="font-display text-xl font-bold">Verifikasi sebelum voting</h2>
+        <h2 className="font-display text-xl font-bold">{kind === 'vote' ? 'Verifikasi sebelum voting' : 'Verifikasi sebelum mengisi'}</h2>
         <p className="mt-1 text-sm text-mute">
-          Satu akun Google atau satu nomor WhatsApp hanya dapat mengisi satu kali. Pilih cara verifikasi Anda.
+          {kind === 'vote'
+            ? 'Satu akun Google atau satu nomor WhatsApp hanya dapat mengisi satu kali. Pilih cara verifikasi Anda.'
+            : 'Login dengan akun Google atau WhatsApp OTP di awal, sebelum mengisi. Verifikasi ini menautkan kiriman ke Riwayat Saya supaya Anda bisa memantau status & balasannya — pemilik link tetap melihat kiriman anonim sebagai “Anonim”.'}
         </p>
       </div>
 
@@ -245,7 +259,7 @@ function VerificationGate({ slug, onVerified, onAlreadyVoted }: {
                 <div ref={googleBtnRef} aria-label="Login dengan Google" />
               </div>
               <p className="text-center text-xs text-mute">
-                Login Google hanya dipakai untuk memastikan satu akun satu suara. Nama yang tampil di jawaban tetap mengikuti pilihan identitas Anda di langkah berikutnya.
+                Login Google hanya dipakai untuk verifikasi &amp; menautkan kiriman ke Riwayat Saya. Nama yang tampil di jawaban tetap mengikuti pilihan identitas Anda di langkah berikutnya.
               </p>
             </>
           ) : (
@@ -339,17 +353,20 @@ export default function Public({ slug }: { slug: string }) {
   const { interactions, responses, submit } = useStore()
   const it = interactions.find((i) => i.slug === slug)
   const [voter, setVoter] = useState<VerifiedVoter | null>(() => loadVoter(slug))
+  // Semua jenis link wajib verifikasi di awal sebelum mengisi — tanpa
+  // verifikasi tidak ada voterKey, dan kiriman (termasuk balasan atasnya)
+  // tidak bisa ditautkan ke Riwayat Saya pengisi. Batas satu kiriman per
+  // identitas hanya berlaku untuk voting; kritik & saran / pesan anonim
+  // boleh dikirim berulang oleh identitas yang sama.
   const [phase, setPhase] = useState<Phase>(() => {
     const found = interactions.find((i) => i.slug === slug)
-    if (found?.kind !== 'vote') return 'isi'
+    if (!found) return 'isi'
     const v = loadVoter(slug)
     if (!v) return 'verifikasi'
-    return responses.some((r) => r.iid === found.id && r.voterKey === v.key) ? 'sudah' : 'isi'
+    if (found.kind === 'vote' && responses.some((r) => r.iid === found.id && r.voterKey === v.key)) return 'sudah'
+    return 'isi'
   })
   const [alreadyMsg, setAlreadyMsg] = useState<string | null>(null)
-  /** Verifikasi opsional di form kritik & saran / pesan anonim (untuk riwayat). */
-  const [showVerifyBox, setShowVerifyBox] = useState(false)
-  const [verifyNotice, setVerifyNotice] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [choice, setChoice] = useState('')
   const [msg, setMsg] = useState('')
@@ -417,7 +434,8 @@ export default function Public({ slug }: { slug: string }) {
     saveIdentity(v)
     setVoter(v)
     setAlreadyMsg(null)
-    if (it && responses.some((r) => r.iid === it.id && r.voterKey === v.key)) {
+    // Hanya voting yang dibatasi satu kiriman per identitas.
+    if (it?.kind === 'vote' && responses.some((r) => r.iid === it.id && r.voterKey === v.key)) {
       setPhase('sudah')
     } else {
       setPhase('isi')
@@ -425,17 +443,9 @@ export default function Public({ slug }: { slug: string }) {
   }
 
   const handleAlreadyVoted = (message: string) => {
+    // Hanya dipanggil gerbang untuk voting (lihat VerificationGate).
     setAlreadyMsg(message)
     setPhase('sudah')
-  }
-
-  /** Verifikasi opsional (kritik & saran / anon): menautkan kiriman ke riwayat, tanpa memblokir pengisian. */
-  const handleOptionalVerified = (v: VerifiedVoter) => {
-    saveVoter(v)
-    saveIdentity(v)
-    setVoter(v)
-    setShowVerifyBox(false)
-    setVerifyNotice(null)
   }
 
   const changeVerification = () => {
@@ -568,7 +578,7 @@ export default function Public({ slug }: { slug: string }) {
               {closed ? (
                 <p className="rounded-lg bg-ground p-4 text-sm font-medium text-mute">Interaksi ini sedang tidak aktif atau di luar periode.</p>
               ) : phase === 'verifikasi' ? (
-                <VerificationGate slug={it.slug} onVerified={handleVerified} onAlreadyVoted={handleAlreadyVoted} />
+                <VerificationGate slug={it.slug} kind={it.kind} onVerified={handleVerified} onAlreadyVoted={handleAlreadyVoted} />
               ) : showAlready || phase === 'sudah' ? (
                 <div className="space-y-4 rounded-xl bg-amber-50 p-6 text-center">
                   <p className="font-display text-xl font-bold text-amber-800">Anda sudah pernah melakukan voting</p>
@@ -593,14 +603,12 @@ export default function Public({ slug }: { slug: string }) {
                 <div className="space-y-3 rounded-xl bg-brand-soft p-6 text-center">
                   <p className="font-display text-xl font-bold text-brand">{it.kind === 'vote' ? 'Suara Anda tercatat' : it.kind === 'anon' ? 'Pesan terkirim secara anonim' : 'Terima kasih atas masukan Anda'}</p>
                   <p className="text-sm text-brand/80" role="status">
-                    {isAnon ? 'Terkirim sebagai Anonymous — identitas Anda tidak tercatat.' : `Terkirim atas nama ${name.trim()}.`}
+                    {isAnon ? 'Terkirim sebagai Anonymous — pemilik link hanya melihat “Anonim”, tanpa nama/nomor/email Anda.' : `Terkirim atas nama ${name.trim()}.`}
                   </p>
                   {(it.kind === 'feedback' || it.kind === 'anon') && (
                     <p className="text-sm text-brand/80" role="status">
                       Status pengiriman: <b className="text-brand">✓ Terkirim</b>
-                      {voter
-                        ? ' — pantau status & balasan di Riwayat Saya.'
-                        : ' — verifikasi identitas saat mengisi agar status & balasan tercatat di Riwayat Saya.'}
+                      {' — pantau status & balasan di Riwayat Saya.'}
                     </p>
                   )}
                   {multi && (
@@ -673,8 +681,8 @@ export default function Public({ slug }: { slug: string }) {
                     <p className="font-display font-bold">🔒 Keterangan privasi — baca sebelum mengisi</p>
                     <ul className="list-disc space-y-1 pl-5 text-mute">
                       <li><b className="text-ink">Tampilkan nama:</b> nama yang Anda tulis tampil bersama jawaban Anda kepada pemilik interaksi ini.</li>
-                      <li><b className="text-ink">Isi sebagai Anonymous:</b> nama tidak diminta dan tidak disimpan; jawaban Anda tercatat sebagai “Anonim” dan pemilik interaksi tidak dapat mengetahui siapa Anda.</li>
-                      <li>Jawaban hanya digunakan untuk keperluan interaksi ini. Untuk mode Anonymous, identitas, IP, dan perangkat Anda juga tidak ditampilkan kepada pemilik link.</li>
+                      <li><b className="text-ink">Isi sebagai Anonymous:</b> nama tidak diminta dan tidak disimpan; jawaban Anda tercatat sebagai “Anonim” dan pemilik interaksi tidak dapat mengetahui siapa Anda. Verifikasi di awal hanya dipakai untuk menautkan kiriman ke Riwayat Saya Anda sendiri.</li>
+                      <li>Jawaban hanya digunakan untuk keperluan interaksi ini. Untuk mode Anonymous, nama, nomor/email verifikasi, IP, dan perangkat Anda juga tidak ditampilkan kepada pemilik link.</li>
                     </ul>
                     {forcedAnon && <p className="font-medium text-anon">Interaksi ini adalah Pesan Anonim — identitas selalu Anonymous dan tidak dapat diubah.</p>}
                   </div>
@@ -704,24 +712,9 @@ export default function Public({ slug }: { slug: string }) {
                     Status identitas: {identityStatus}
                   </p>
 
-                  {(it.kind === 'feedback' || it.kind === 'anon') && !voter && (
-                    <div className="space-y-3 rounded-xl border border-line bg-ground/60 p-4">
-                      {showVerifyBox ? (
-                        <>
-                          <p className="text-sm font-semibold">Verifikasi opsional — simpan ke riwayat saya</p>
-                          <VerificationGate slug={it.slug} onVerified={handleOptionalVerified} onAlreadyVoted={(msg) => setVerifyNotice(msg)} />
-                          <Btn type="button" variant="ghost" className="w-full py-2" onClick={() => setShowVerifyBox(false)}>Tutup tanpa verifikasi</Btn>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-sm font-semibold">Simpan ke riwayat saya? (opsional)</p>
-                          <p className="text-xs leading-relaxed text-mute">Verifikasi dengan Google atau WhatsApp OTP agar masukan ini tercatat di dashboard Riwayat Saya dan Anda bisa melihat status &amp; balasannya nanti.</p>
-                          {verifyNotice && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">{verifyNotice}</p>}
-                          <Btn type="button" variant="ghost" className="w-full py-2" onClick={() => setShowVerifyBox(true)}>Verifikasi identitas</Btn>
-                        </>
-                      )}
-                    </div>
-                  )}
+                  {/* Verifikasi sudah dilakukan di awal (gerbang di atas):
+                      kiriman ini selalu tertaut ke identitas terverifikasi,
+                      jadi status & balasannya tercatat di Riwayat Saya. */}
                   {(it.kind === 'feedback' || it.kind === 'anon') && voter && (
                     <p className="flex items-center gap-2 rounded-lg bg-emerald-100 px-3 py-2 text-xs font-medium text-emerald-700" role="status">
                       ✓ Terverifikasi · {voter.method === 'google' ? 'Google' : 'WhatsApp'} {voter.label} — kiriman ini tercatat di riwayat Anda.

@@ -1,30 +1,23 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useStore, type Interaction, type Response } from '../services/store'
-import { initGoogleSignIn, isGoogleConfigured } from '../services/googleAuth'
-import { loadIdentities, removeIdentity, saveIdentity, type VerifiedVoter } from '../services/otpService'
+import { loadIdentities, removeIdentity, type VerifiedVoter } from '../services/otpService'
 import { loadSeenReplyIds, markRepliesSeen, markReplySeen } from '../services/replyNotifications'
 import { Btn, Card, KindBadge, Logo, StatusPill, fmtDate } from '../components/ui'
 
-function GoogleIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden>
-      <path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.3 6.1 29.3 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z" />
-      <path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.3 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
-      <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z" />
-      <path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.6-.4-3.9z" />
-    </svg>
-  )
-}
-
 /**
  * Dashboard pengisi link (`#/riwayat`): profil, riwayat voting, riwayat
- * kritik & saran, link voting yang pernah diisi, serta status & detail
- * balasan dari pembuat link — untuk identitas terverifikasi (Google /
- * WhatsApp) yang tersimpan di perangkat ini.
+ * kritik & saran, riwayat pesan anonim, link voting yang pernah diisi,
+ * serta status & detail balasan dari pembuat link — untuk identitas
+ * terverifikasi (Google / WhatsApp) yang tersimpan di perangkat ini.
+ *
+ * Identitas HANYA ditambahkan saat pengisi verifikasi di awal pengisian
+ * sebuah link (Google / WhatsApp OTP di halaman publik). Tidak ada data
+ * demo dan tidak ada tombol tambah akun di dashboard ini.
  *
  * Riwayat dihitung dari data lokal di perangkat & browser ini saja
- * (localStorage): pengisian yang dilakukan tanpa verifikasi tidak
- * tertaut ke identitas mana pun sehingga tidak muncul di sini.
+ * (localStorage): setiap kiriman — voting, kritik & saran, maupun pesan
+ * anonim — selalu membawa `voterKey` identitas terverifikasi pengirimnya,
+ * sehingga balasan pemilik link atas kiriman itu muncul di sini.
  */
 export default function VoterDashboard() {
   const { interactions, responses } = useStore()
@@ -33,55 +26,19 @@ export default function VoterDashboard() {
   const [openReplyId, setOpenReplyId] = useState<string | null>(null)
   /** Id respons yang balasannya sudah dibaca (notifikasi balasan). */
   const [seenIds, setSeenIds] = useState<string[]>(() => loadSeenReplyIds())
-  const [showGoogle, setShowGoogle] = useState(false)
-  const [googleErr, setGoogleErr] = useState<string | null>(null)
-  const googleBtnRef = useRef<HTMLDivElement>(null)
-  const googleConfigured = isGoogleConfigured()
 
   const selected = identities.find((v) => v.key === selectedKey) ?? identities[0] ?? null
-
-  // Tambah akun Google sebagai identitas dashboard (juga dipakai saat belum ada identitas sama sekali).
-  const needGoogle = showGoogle || identities.length === 0
-  useEffect(() => {
-    if (!needGoogle || !googleConfigured) return
-    let cleanup: (() => void) | undefined
-    let cancelled = false
-    initGoogleSignIn(({ profile, error }) => {
-      if (error) setGoogleErr(error)
-      else if (profile) {
-        const v: VerifiedVoter = {
-          method: 'google',
-          key: `google:${profile.googleId}`,
-          label: profile.email,
-          verifiedAt: new Date().toISOString(),
-          slug: '',
-        }
-        saveIdentity(v)
-        setIdentities(loadIdentities())
-        setSelectedKey(v.key)
-        setShowGoogle(false)
-      }
-    }, googleBtnRef.current)
-      .then((fn) => {
-        if (cancelled) fn()
-        else cleanup = fn
-      })
-      .catch((e) => setGoogleErr(e instanceof Error ? e.message : 'Login Google gagal dimuat.'))
-    return () => {
-      cancelled = true
-      cleanup?.()
-    }
-    // needGoogle berubah saat identitas ditambah/dihapus; handler di bawah stabil.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needGoogle, googleConfigured])
 
   const findInteraction = (iid: string) => interactions.find((i) => i.id === iid)
   const myResponses = selected
     ? [...responses.filter((r) => r.voterKey === selected.key)].sort((a, b) => +new Date(b.at) - +new Date(a.at))
     : []
   const voteResponses = myResponses.filter((r) => findInteraction(r.iid)?.kind === 'vote')
-  const feedbackResponses = myResponses.filter((r) => findInteraction(r.iid)?.kind !== 'vote')
-  const repliesReceived = feedbackResponses.filter((r) => r.reply).length
+  const feedbackResponses = myResponses.filter((r) => findInteraction(r.iid)?.kind === 'feedback')
+  /** Pesan anonim dipisah dari kritik & saran agar balasan atas pesan
+      anonim mudah ditemukan — sebelumnya tercampur di satu daftar. */
+  const anonResponses = myResponses.filter((r) => findInteraction(r.iid)?.kind === 'anon')
+  const repliesReceived = myResponses.filter((r) => r.reply && findInteraction(r.iid)?.kind !== 'vote').length
   /** Balasan yang belum dibaca untuk identitas yang dipilih. */
   const unseen = selected
     ? [...responses.filter((r) => r.voterKey === selected.key && r.reply && !seenIds.includes(r.id))].sort((a, b) => +new Date(b.at) - +new Date(a.at))
@@ -128,17 +85,10 @@ export default function VoterDashboard() {
           <Card className="space-y-4 p-6 text-center">
             <h2 className="font-display text-xl font-bold">Belum ada identitas terverifikasi</h2>
             <p className="mx-auto max-w-md text-sm text-mute">
-              Verifikasi dengan akun Google di bawah ini, atau verifikasi lewat WhatsApp OTP saat mengisi link voting.
-              Identitas yang sudah terverifikasi akan tersimpan di perangkat ini beserta riwayatnya.
+              Buka sebuah link voting, kritik &amp; saran, atau pesan anonim, lalu verifikasi dengan akun Google atau
+              WhatsApp OTP di awal sebelum mengisi. Setelah itu identitas Anda tersimpan di perangkat ini beserta
+              riwayat dan balasannya, dan muncul di dashboard ini.
             </p>
-            {googleConfigured ? (
-              <div className="flex justify-center"><div ref={googleBtnRef} aria-label="Login dengan Google" /></div>
-            ) : (
-              <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                Login Google belum dikonfigurasi (isi VITE_GOOGLE_CLIENT_ID). Sementara itu, verifikasi lewat WhatsApp OTP di link voting.
-              </p>
-            )}
-            {googleErr && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{googleErr}</p>}
             <p><a href="#/" className="text-sm font-semibold text-brand hover:underline">← Kembali ke beranda</a></p>
           </Card>
         ) : (
@@ -157,27 +107,14 @@ export default function VoterDashboard() {
                   {v.method === 'google' ? 'G ' : '💬 '} {v.label}
                 </button>
               ))}
-              <Btn variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => { setGoogleErr(null); setShowGoogle((s) => !s) }}>
-                + Akun Google
-              </Btn>
             </div>
-            {showGoogle && (
-              <Card className="space-y-3 p-5">
-                {googleConfigured ? (
-                  <div className="flex justify-center"><div ref={googleBtnRef} aria-label="Login dengan Google" /></div>
-                ) : (
-                  <p className="text-sm text-mute">Login Google belum dikonfigurasi. Isi VITE_GOOGLE_CLIENT_ID di file .env (lihat .env.example), lalu muat ulang aplikasi.</p>
-                )}
-                {googleErr && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{googleErr}</p>}
-              </Card>
-            )}
 
             {/* Notifikasi balasan baru dari pembuat link */}
             {unseen.length > 0 && (
               <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4" role="status">
                 <span className="text-xl" aria-hidden>🔔</span>
                 <p className="min-w-0 flex-1 text-sm leading-relaxed text-amber-900">
-                  <b>Ada {unseen.length} balasan baru dari pembuat link</b> untuk kritik &amp; saran Anda. Buka detail balasan di bawah untuk membacanya.
+                  <b>Ada {unseen.length} balasan baru dari pembuat link</b> untuk kritik &amp; saran dan pesan anonim Anda. Buka detail balasan di bawah untuk membacanya.
                 </p>
                 <a href="#kritik-saran" className="text-sm font-semibold text-brand hover:underline">Lihat balasan</a>
                 <Btn variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setSeenIds(markRepliesSeen(unseen.map((r) => r.id)))}>Tandai sudah dibaca</Btn>
@@ -206,7 +143,7 @@ export default function VoterDashboard() {
               {[
                 ['Voting diisi', voteResponses.length],
                 ['Kritik & saran', feedbackResponses.length],
-                ['Link voting', voteLinks.length],
+                ['Pesan anonim', anonResponses.length],
                 ['Balasan diterima', repliesReceived],
               ].map(([label, n]) => (
                 <Card key={label as string} className="p-5">
@@ -264,59 +201,99 @@ export default function VoterDashboard() {
             </section>
 
             {/* Riwayat kritik & saran + status & detail balasan */}
-            <section className="space-y-3" id="kritik-saran">
-              <h2 className="font-display text-xl font-bold">Riwayat kritik &amp; saran</h2>
-              {feedbackResponses.length === 0 ? (
-                <Card className="p-6 text-center text-sm text-mute">
-                  Belum ada kritik &amp; saran dari identitas ini. Isi kritik &amp; saran dengan verifikasi opsional di formnya agar tercatat di sini.
-                </Card>
-              ) : (
-                <div className="space-y-3">
-                  {feedbackResponses.map((r) => {
-                    const it = findInteraction(r.iid)
-                    const open = openReplyId === r.id
-                    return (
-                      <Card key={r.id} className="p-5">
-                        <div className="flex flex-wrap items-center gap-2 text-sm">
-                          <b className="flex-1">{it?.title ?? 'Link dihapus'}</b>
-                          {r.reply && !seenIds.includes(r.id) && (
-                            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">BARU</span>
-                          )}
-                          {it && <KindBadge k={it.kind} />}
-                          <StatusPill s={r.status} />
-                          <time className="text-xs text-mute">{fmtDate(r.at)}</time>
-                        </div>
-                        <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-mute">{r.message}</p>
-                        <div className="mt-3 flex items-center gap-3 text-sm">
-                          <span className={`font-semibold ${r.reply ? 'text-emerald-700' : 'text-mute'}`}>
-                            {r.reply ? '✓ Sudah dibalas pembuat link' : '○ Belum ada balasan'}
-                          </span>
-                          <button
-                            className="font-semibold text-brand hover:underline"
-                            onClick={() => {
-                              if (!open && r.reply) setSeenIds(markReplySeen(r.id))
-                              setOpenReplyId(open ? null : r.id)
-                            }}
-                          >
-                            {open ? 'Tutup detail ↑' : 'Lihat detail balasan ↓'}
-                          </button>
-                        </div>
-                        {open && <ReplyDetail r={r} />}
-                      </Card>
-                    )
-                  })}
-                </div>
-              )}
-            </section>
+            <HistorySection
+              id="kritik-saran"
+              title="Riwayat kritik & saran"
+              empty="Belum ada kritik & saran dari identitas ini. Isi kritik & saran lewat linknya — verifikasi Google / WhatsApp OTP di awal — agar tercatat di sini beserta balasannya."
+              items={feedbackResponses}
+              findInteraction={findInteraction}
+              openReplyId={openReplyId}
+              seenIds={seenIds}
+              onToggleReply={(r, open) => {
+                if (!open && r.reply) setSeenIds(markReplySeen(r.id))
+                setOpenReplyId(open ? null : r.id)
+              }}
+            />
+
+            {/* Riwayat pesan anonim + status & detail balasan */}
+            <HistorySection
+              id="pesan-anonim"
+              title="Riwayat pesan anonim"
+              empty="Belum ada pesan anonim dari identitas ini. Isi pesan anonim lewat linknya — verifikasi Google / WhatsApp OTP di awal — agar tercatat di sini beserta balasannya. Pemilik link tetap melihat kiriman Anda sebagai “Anonim”."
+              items={anonResponses}
+              findInteraction={findInteraction}
+              openReplyId={openReplyId}
+              seenIds={seenIds}
+              onToggleReply={(r, open) => {
+                if (!open && r.reply) setSeenIds(markReplySeen(r.id))
+                setOpenReplyId(open ? null : r.id)
+              }}
+            />
 
             <p className="text-center text-xs text-mute">
-              Riwayat dihitung dari perangkat &amp; browser ini saja (data tersimpan lokal). Pengisian tanpa verifikasi tidak tertaut ke identitas mana pun.
+              Riwayat dihitung dari perangkat &amp; browser ini saja (data tersimpan lokal). Setiap kiriman tercatat
+              karena Anda verifikasi dengan Google / WhatsApp OTP di awal sebelum mengisi link.
               {' '}<a href="#/" className="font-semibold text-brand hover:underline">← Kembali ke beranda</a>
             </p>
           </>
         )}
       </main>
     </div>
+  )
+}
+
+/** Satu daftar riwayat masukan (kritik & saran, atau pesan anonim):
+    status, lencana balasan baru, dan detail balasan pemilik link. */
+function HistorySection({ id, title, empty, items, findInteraction, openReplyId, seenIds, onToggleReply }: {
+  id: string
+  title: string
+  empty: string
+  items: Response[]
+  findInteraction: (iid: string) => Interaction | undefined
+  openReplyId: string | null
+  seenIds: string[]
+  onToggleReply: (r: Response, open: boolean) => void
+}) {
+  return (
+    <section className="space-y-3" id={id}>
+      <h2 className="font-display text-xl font-bold">{title}</h2>
+      {items.length === 0 ? (
+        <Card className="p-6 text-center text-sm text-mute">{empty}</Card>
+      ) : (
+        <div className="space-y-3">
+          {items.map((r) => {
+            const it = findInteraction(r.iid)
+            const open = openReplyId === r.id
+            return (
+              <Card key={r.id} className="p-5">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <b className="flex-1">{it?.title ?? 'Link dihapus'}</b>
+                  {r.reply && !seenIds.includes(r.id) && (
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">BARU</span>
+                  )}
+                  {it && <KindBadge k={it.kind} />}
+                  <StatusPill s={r.status} />
+                  <time className="text-xs text-mute">{fmtDate(r.at)}</time>
+                </div>
+                <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-mute">{r.message}</p>
+                <div className="mt-3 flex items-center gap-3 text-sm">
+                  <span className={`font-semibold ${r.reply ? 'text-emerald-700' : 'text-mute'}`}>
+                    {r.reply ? '✓ Sudah dibalas pembuat link' : '○ Belum ada balasan'}
+                  </span>
+                  <button
+                    className="font-semibold text-brand hover:underline"
+                    onClick={() => onToggleReply(r, open)}
+                  >
+                    {open ? 'Tutup detail ↑' : 'Lihat detail balasan ↓'}
+                  </button>
+                </div>
+                {open && <ReplyDetail r={r} />}
+              </Card>
+            )
+          })}
+        </div>
+      )}
+    </section>
   )
 }
 

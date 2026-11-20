@@ -15,16 +15,13 @@
 -- ------------------------------------------------------------------------------
 -- Table Cleanup
 -- ------------------------------------------------------------------------------
-<<<<<<< HEAD
 SET FOREIGN_KEY_CHECKS = 0;
-=======
 DROP TABLE IF EXISTS `recommendation_results`;
 DROP TABLE IF EXISTS `recommendation_rules`;
 DROP TABLE IF EXISTS `notifications`;
 DROP TABLE IF EXISTS `rate_limits`;
 DROP TABLE IF EXISTS `interaction_participants`;
 DROP TABLE IF EXISTS `otps`;
->>>>>>> 90b6bec50de3813d1431940b209e353fe3d9a175
 DROP TABLE IF EXISTS `voting_answers`;
 DROP TABLE IF EXISTS `voting_questions`;
 DROP TABLE IF EXISTS `response_identities`;

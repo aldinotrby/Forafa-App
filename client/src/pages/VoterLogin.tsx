@@ -30,6 +30,14 @@ function GoogleIcon() {
  *   disimpan — kiriman lama di perangkat ini yang memakai `voterKey`
  *   yang sama langsung ikut tampil di riwayat (tidak mulai dari 0).
  *
+ * Masuk Google di sini juga membuat sesi akun Forafa (sama seperti
+ * login Google di halaman utama): ID token ditukar dengan JWT backend
+ * sehingga kiriman yang dibuat setelahnya tercatat `user_id`-nya dan
+ * riwayatnya tampil dari server di perangkat mana pun. Sesi ini
+ * best-effort — bila backend tidak terjangkau, identitas pengisi tetap
+ * tersimpan dan riwayat lokal tetap jalan; hanya riwayat server yang
+ * tidak tersedia. Sesi berakhir saat tab ditutup, seperti sesi lainnya.
+ *
  * Dulu ada juga metode OTP WhatsApp; metode itu sudah dihapus — login
  * dan daftar pengisi sekarang hanya lewat Google.
  */
@@ -37,7 +45,7 @@ export default function VoterLogin({ onLoggedIn, onCancel }: {
   onLoggedIn: (v: VerifiedVoter) => void
   onCancel?: () => void
 }) {
-  const { responses } = useStore()
+  const { responses, loginWithGoogle } = useStore()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [error, setError] = useState<string | null>(null)
   const googleBtnRef = useRef<HTMLDivElement>(null)
@@ -47,13 +55,17 @@ export default function VoterLogin({ onLoggedIn, onCancel }: {
   // setiap kali mode/responses berubah).
   const latestRef = useRef({ mode, responses })
   latestRef.current = { mode, responses }
+  // loginWithGoogle berubah tiap render (useMemo store) — simpan di ref
+  // supaya callback GIS yang sekali pasang selalu memakai versi terbaru.
+  const loginWithGoogleRef = useRef(loginWithGoogle)
+  loginWithGoogleRef.current = loginWithGoogle
 
   // Tombol resmi Google dirender oleh Google Identity Services ke div ini.
   useEffect(() => {
     if (!googleConfigured) return
     let cleanup: (() => void) | undefined
     let cancelled = false
-    initGoogleSignIn(({ profile, error: err }) => {
+    initGoogleSignIn(({ profile, credential, error: err }) => {
       if (err) {
         setError(err)
         return
@@ -71,6 +83,11 @@ export default function VoterLogin({ onLoggedIn, onCancel }: {
         setError('Akun Google ini belum terdaftar sebagai pengisi di perangkat ini. Silakan daftar dulu sebagai pengisi baru.')
         return
       }
+      // Selain menyimpan identitas pengisi, buat juga sesi akun Forafa
+      // (tukar ID token dengan JWT backend) — best-effort: bila gagal
+      // (mis. backend tidak terjangkau), identitas pengisi tetap masuk
+      // dan riwayat lokal tetap tampil; hanya riwayat server yang absen.
+      if (credential) loginWithGoogleRef.current(profile, credential)
       finishLogin(v)
     }, googleBtnRef.current)
       .then((fn) => {
@@ -133,8 +150,8 @@ export default function VoterLogin({ onLoggedIn, onCancel }: {
               </div>
               <p className="text-center text-xs text-mute">
                 {mode === 'register'
-                  ? 'Akun Google yang belum terdaftar otomatis dibuatkan identitas pengisi baru.'
-                  : 'Login Google hanya dipakai untuk mengenali identitas Anda dan menampilkan riwayatnya.'}
+                  ? 'Akun Google yang belum terdaftar otomatis dibuatkan identitas pengisi baru — dan Anda juga masuk sebagai akun Forafa, supaya kiriman berikutnya tercatat di server dan riwayatnya tampil di perangkat mana pun.'
+                  : 'Login Google hanya dipakai untuk mengenali identitas Anda dan menampilkan riwayatnya — Anda juga masuk sebagai akun Forafa, supaya kiriman berikutnya tercatat di server.'}
               </p>
             </>
           ) : (

@@ -203,10 +203,45 @@ jobs:
           echo "Public response: $PUB_RES"
           echo "$PUB_RES" | grep '"slug":"taman-rw05"'
 
-          echo "📝 Testing Public Submission /api/v1/public/taman-rw05/submit..."
-          SUBMIT_RES=$(curl -s -f -X POST http://127.0.0.1:8000/api/v1/public/taman-rw05/submit \
+          echo "🚫 Testing Unverified Submission is rejected (HTTP 422)..."
+          UNVERIFIED_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:8000/api/v1/public/taman-rw05/submit \
             -H "Content-Type: application/json" \
             -d '{"name":"QA CI Bot","choice":"Taman Mekar Asri"}')
+          if [ "$UNVERIFIED_STATUS" != "422" ]; then
+            echo "❌ Unverified submission expected HTTP 422, got $UNVERIFIED_STATUS"
+            exit 1
+          fi
+          echo "✅ Unverified submission correctly rejected (HTTP 422)."
+
+          echo "📱 Testing WhatsApp OTP Verification Flow (mock provider)..."
+          OTP_SEND_RES=$(curl -s -f -X POST http://127.0.0.1:8000/api/v1/public/taman-rw05/otp/send \
+            -H "Content-Type: application/json" \
+            -d '{"phone":"628123456789"}')
+          echo "OTP send response: $OTP_SEND_RES"
+          OTP_CODE=$(echo "$OTP_SEND_RES" | grep -o '"dev_otp":"[^"]*' | cut -d'"' -f4)
+
+          if [ -z "$OTP_CODE" ]; then
+            echo "❌ Failed to retrieve dev_otp from mock OTP provider!"
+            exit 1
+          fi
+          echo "✅ Mock OTP code obtained."
+
+          OTP_VERIFY_RES=$(curl -s -f -X POST http://127.0.0.1:8000/api/v1/public/taman-rw05/otp/verify \
+            -H "Content-Type: application/json" \
+            -d "{\"phone\":\"628123456789\",\"code\":\"$OTP_CODE\"}")
+          echo "OTP verify response: $OTP_VERIFY_RES"
+          OTP_TOKEN=$(echo "$OTP_VERIFY_RES" | grep -o '"verification_token":"[^"]*' | cut -d'"' -f4)
+
+          if [ -z "$OTP_TOKEN" ]; then
+            echo "❌ Failed to retrieve verification_token from OTP verify!"
+            exit 1
+          fi
+          echo "✅ OTP verification token obtained."
+
+          echo "📝 Testing Public Submission /api/v1/public/taman-rw05/submit (verified voter)..."
+          SUBMIT_RES=$(curl -s -f -X POST http://127.0.0.1:8000/api/v1/public/taman-rw05/submit \
+            -H "Content-Type: application/json" \
+            -d "{\"name\":\"QA CI Bot\",\"choice\":\"Taman Mekar Asri\",\"verification\":{\"type\":\"whatsapp\",\"identifier\":\"wa:628123456789\",\"token\":\"$OTP_TOKEN\"}}")
           echo "Submit response: $SUBMIT_RES"
           echo "$SUBMIT_RES" | grep '"message":"Tanggapan berhasil dikirim."'
 
@@ -228,3 +263,4 @@ jobs:
           echo "| CORS Preflight Handshake | Client <-> Server | ✅ Berhasil |" >> $GITHUB_STEP_SUMMARY
           echo "| Auth Contract (/login & /me) | JWT Bearer | ✅ Berhasil |" >> $GITHUB_STEP_SUMMARY
           echo "| Public Portal & Submission | REST API Contract | ✅ Berhasil |" >> $GITHUB_STEP_SUMMARY
+          echo "| WhatsApp OTP Verification (mock) | OTP send → verify → verified submit | ✅ Berhasil |" >> $GITHUB_STEP_SUMMARY

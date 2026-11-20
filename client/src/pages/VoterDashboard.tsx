@@ -131,13 +131,6 @@ export default function VoterDashboard() {
                   {v.method === 'google' ? 'G ' : '💬 '} {v.label}
                 </button>
               ))}
-              <button
-                type="button"
-                onClick={() => { setJustLoggedIn(null); setShowLogin(true) }}
-                className="rounded-full border border-dashed border-line bg-white px-3 py-1.5 text-xs font-semibold text-brand transition-colors hover:bg-brand-soft"
-              >
-                ＋ Tambah identitas
-              </button>
             </div>
 
             {/* Notifikasi balasan baru dari pembuat link */}

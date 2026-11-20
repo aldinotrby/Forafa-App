@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../services/store'
 import { initGoogleSignIn, isGoogleConfigured } from '../services/googleAuth'
+import { requestEmailOtp, verifyEmailOtp } from '../services/emailOtpService'
 import { Btn, Field, Logo, fmtDate, inputCls } from '../components/ui'
 
 function GoogleIcon() {
@@ -15,11 +16,21 @@ function GoogleIcon() {
 }
 
 export default function Auth() {
-  const { login, register, loginWithGoogle, loginStatus, sessionHistory } = useStore()
+  const { login, register, loginWithGoogle, loginStatus, sessionHistory, users } = useStore()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [err, setErr] = useState<string | null>(null)
   const [f, setF] = useState({ id: '', username: '', email: '', password: '' })
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }))
+  // Pendaftaran email 2 langkah: isi form → kode OTP 5 digit dikirim ke
+  // email dari forafagroup@gmail.com → verifikasi kode → akun dibuat.
+  // Tidak ada kode demo: tanpa kode dari email sungguhan, akun tidak dibuat.
+  const [otpStep, setOtpStep] = useState<'form' | 'code'>('form')
+  const [otpCode, setOtpCode] = useState('')
+  const [otpErr, setOtpErr] = useState<string | null>(null)
+  const [otpBusy, setOtpBusy] = useState(false)
+  const [expiresAt, setExpiresAt] = useState(0)
+  const [resendAt, setResendAt] = useState(0)
+  const [now, setNow] = useState(() => Date.now())
   const googleConfigured = isGoogleConfigured()
   const googleBtnRef = useRef<HTMLDivElement>(null)
   const googleLoginRef = useRef(loginWithGoogle)
@@ -46,10 +57,97 @@ export default function Auth() {
     }
   }, [googleConfigured])
 
+  // Hitung mundur masa berlaku kode & jeda kirim ulang (langkah kode saja).
+  useEffect(() => {
+    if (otpStep !== 'code') return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [otpStep])
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
-    setErr(mode === 'login' ? login(f.id, f.password) : register({ username: f.username, email: f.email, password: f.password }))
+    if (mode === 'login') {
+      setErr(login(f.id, f.password))
+      return
+    }
+    if (otpStep === 'code') {
+      void verifyOtp()
+      return
+    }
+    void sendOtp()
   }
+
+  /** Langkah 1 daftar: validasi lokal, lalu minta backend mengirim kode. */
+  const sendOtp = async () => {
+    setErr(null)
+    setOtpErr(null)
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) {
+      setErr('Format email tidak valid.')
+      return
+    }
+    if (!/^[a-z0-9_]{3,20}$/i.test(f.username)) {
+      setErr('Username 3-20 karakter: huruf, angka, underscore.')
+      return
+    }
+    if (f.password.length < 8) {
+      setErr('Password minimal 8 karakter.')
+      return
+    }
+    if (users.some((u) => u.email === f.email || u.username.toLowerCase() === f.username.toLowerCase())) {
+      setErr('Email atau username sudah terdaftar.')
+      return
+    }
+    setOtpBusy(true)
+    const r = await requestEmailOtp(f.email)
+    setOtpBusy(false)
+    if (!r.ok) {
+      setErr(r.error ?? 'Gagal mengirim kode verifikasi.')
+      return
+    }
+    setExpiresAt(Date.now() + (r.expiresInSeconds ?? 600) * 1000)
+    setResendAt(Date.now() + (r.resendAfterSeconds ?? 60) * 1000)
+    setOtpCode('')
+    setOtpStep('code')
+  }
+
+  /** Langkah 2 daftar: verifikasi kode, lalu buat akun dengan tokennya. */
+  const verifyOtp = async () => {
+    setOtpErr(null)
+    if (!/^\d{5}$/.test(otpCode)) {
+      setOtpErr('Kode verifikasi harus 5 angka.')
+      return
+    }
+    setOtpBusy(true)
+    const v = await verifyEmailOtp(f.email, otpCode)
+    setOtpBusy(false)
+    if (!v.ok) {
+      setOtpErr(v.error ?? 'Verifikasi gagal.')
+      return
+    }
+    const e = register({ username: f.username, email: f.email, password: f.password, verificationToken: v.verificationToken })
+    if (e) setOtpErr(e)
+  }
+
+  const resendOtp = async () => {
+    setOtpErr(null)
+    setOtpBusy(true)
+    const r = await requestEmailOtp(f.email)
+    setOtpBusy(false)
+    if (!r.ok) {
+      setOtpErr(r.error ?? 'Gagal mengirim ulang kode.')
+      return
+    }
+    setExpiresAt(Date.now() + (r.expiresInSeconds ?? 600) * 1000)
+    setResendAt(Date.now() + (r.resendAfterSeconds ?? 60) * 1000)
+    setOtpCode('')
+  }
+
+  const fmtCountdown = (ms: number) => {
+    const s = Math.max(0, Math.ceil(ms / 1000))
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  }
+  const codeLeftMs = expiresAt - now
+  const resendLeftMs = resendAt - now
 
   const googleNotConfigured = () =>
     setErr('Login Google belum dikonfigurasi. Isi VITE_GOOGLE_CLIENT_ID di file .env (lihat .env.example), lalu muat ulang aplikasi.')
@@ -83,26 +181,68 @@ export default function Auth() {
             </h2>
           </div>
 
-          {mode === 'login' ? (
-            <Field label="Email atau username">
-              <input className={inputCls} value={f.id} onChange={(e) => set('id', e.target.value)} placeholder="rina" required />
-            </Field>
+          {mode === 'register' && otpStep === 'code' ? (
+            <>
+              <div className="rounded-lg bg-brand-soft px-3 py-2.5 text-sm text-brand">
+                Kode verifikasi 5 digit dikirim ke <b>{f.email}</b> dari <b>forafagroup@gmail.com</b>.
+                Periksa inbox (dan folder spam). Kode berlaku <b>{fmtCountdown(codeLeftMs)}</b>.
+              </div>
+              <Field label="Kode verifikasi (5 digit)">
+                <input
+                  className={`${inputCls} text-center text-2xl tracking-[0.5em]`}
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                  placeholder="12345"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  required
+                />
+              </Field>
+              {otpErr && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{otpErr}</p>}
+              <div className="flex items-center justify-between text-sm">
+                <button
+                  type="button"
+                  className="font-semibold text-brand hover:underline disabled:text-mute disabled:no-underline"
+                  disabled={otpBusy || resendLeftMs > 0}
+                  onClick={() => void resendOtp()}
+                >
+                  {resendLeftMs > 0 ? `Kirim ulang dalam ${fmtCountdown(resendLeftMs)}` : 'Kirim ulang kode'}
+                </button>
+                <button
+                  type="button"
+                  className="font-semibold text-mute hover:underline"
+                  onClick={() => { setOtpStep('form'); setOtpErr(null); setOtpCode('') }}
+                >
+                  Ubah email
+                </button>
+              </div>
+            </>
           ) : (
             <>
-              <Field label="Username">
-                <input className={inputCls} value={f.username} onChange={(e) => set('username', e.target.value)} placeholder="rina_mekar" required />
-              </Field>
-              <Field label="Email">
-                <input type="email" className={inputCls} value={f.email} onChange={(e) => set('email', e.target.value)} placeholder="nama@email.com" required />
+              {mode === 'login' ? (
+                <Field label="Email atau username">
+                  <input className={inputCls} value={f.id} onChange={(e) => set('id', e.target.value)} placeholder="rina" required />
+                </Field>
+              ) : (
+                <>
+                  <Field label="Username">
+                    <input className={inputCls} value={f.username} onChange={(e) => set('username', e.target.value)} placeholder="rina_mekar" required />
+                  </Field>
+                  <Field label="Email">
+                    <input type="email" className={inputCls} value={f.email} onChange={(e) => set('email', e.target.value)} placeholder="nama@email.com" required />
+                  </Field>
+                </>
+              )}
+              <Field label="Password" hint={mode === 'register' ? 'Minimal 8 karakter. Setelah ini, kode verifikasi 5 digit dikirim ke email Anda.' : undefined}>
+                <input type="password" className={inputCls} value={f.password} onChange={(e) => set('password', e.target.value)} required />
               </Field>
             </>
           )}
-          <Field label="Password" hint={mode === 'register' ? 'Minimal 8 karakter.' : undefined}>
-            <input type="password" className={inputCls} value={f.password} onChange={(e) => set('password', e.target.value)} required />
-          </Field>
 
           {err && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
-          <Btn className="w-full py-2.5">{mode === 'login' ? 'Login' : 'Daftar'}</Btn>
+          <Btn className="w-full py-2.5" disabled={otpBusy}>
+            {mode === 'login' ? 'Login' : otpStep === 'code' ? (otpBusy ? 'Memverifikasi…' : 'Verifikasi & buat akun') : (otpBusy ? 'Mengirim kode…' : 'Kirim kode verifikasi')}
+          </Btn>
 
           <div className="space-y-3">
             <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wider text-mute" aria-hidden>
@@ -122,7 +262,7 @@ export default function Auth() {
 
           <p className="text-center text-sm text-mute">
             {mode === 'login' ? 'Belum punya akun?' : 'Sudah punya akun?'}{' '}
-            <button type="button" className="font-semibold text-brand hover:underline" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setErr(null) }}>
+            <button type="button" className="font-semibold text-brand hover:underline" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setErr(null); setOtpErr(null); setOtpStep('form'); setOtpCode('') }}>
               {mode === 'login' ? 'Daftar sekarang' : 'Login'}
             </button>
           </p>

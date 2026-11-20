@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react'
 import { useStore, type Response, type User, type Kind } from '../services/store'
 import { loadSeenResponseIds, markResponseSeen, markResponsesSeen } from '../services/ownerNotifications'
 import UserWorkspace from './UserWorkspace'
+import Profile from './Profile'
 import { MediaUpload } from '../components/MediaUpload'
 import { SessionStatus } from '../components/SessionStatus'
 import { Btn, Card, Field, KIND, Logo, fmtDate, inputCls } from '../components/ui'
 
-type AdminNav = 'overview' | 'users' | 'notif'
+type AdminNav = 'overview' | 'users' | 'notif' | 'profil'
 
 const kindDot: Record<Kind, string> = { vote: 'bg-vote', feedback: 'bg-fb', anon: 'bg-anon' }
 
@@ -63,6 +64,7 @@ export default function AdminDashboard() {
             { id: 'overview' as AdminNav, label: 'Ringkasan', icon: '▦' },
             { id: 'users' as AdminNav, label: 'Pengguna', icon: '◉' },
             { id: 'notif' as AdminNav, label: 'Notifikasi', icon: '🔔' },
+            { id: 'profil' as AdminNav, label: 'Profil', icon: '◉' },
           ]).map((n) => (
             <button key={n.id} onClick={() => setNav(n.id)} aria-current={nav === n.id}
               className={`flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${nav === n.id ? 'bg-white/15 text-white' : 'text-white/60 hover:bg-white/10 hover:text-white'}`}>
@@ -85,15 +87,17 @@ export default function AdminDashboard() {
       </aside>
 
       <main className="min-w-0 p-5 sm:p-8">
-        {nav === 'overview'
-          ? <AdminOverview onViewUser={(u) => openUserWorkspace(u)} seenIds={seenIds} />
-          : nav === 'users'
-            ? <AdminUsers onViewUser={(u) => openUserWorkspace(u)} seenIds={seenIds} />
-            : <AdminNotifications
-                unseen={unseenAll}
-                onOpenResponse={openResponse}
-                onMarkAll={() => setSeenIds(markResponsesSeen(unseenAll.map((r) => r.id)))}
-              />
+        {nav === 'profil'
+          ? <Profile />
+          : nav === 'overview'
+            ? <AdminOverview onViewUser={(u) => openUserWorkspace(u)} seenIds={seenIds} />
+            : nav === 'users'
+              ? <AdminUsers onViewUser={(u) => openUserWorkspace(u)} seenIds={seenIds} />
+              : <AdminNotifications
+                  unseen={unseenAll}
+                  onOpenResponse={openResponse}
+                  onMarkAll={() => setSeenIds(markResponsesSeen(unseenAll.map((r) => r.id)))}
+                />
         }
       </main>
     </div>

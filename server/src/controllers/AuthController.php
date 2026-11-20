@@ -8,6 +8,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../models/User.php';
 require_once __DIR__ . '/../models/Session.php';
 require_once __DIR__ . '/../models/GoogleAuth.php';
+require_once __DIR__ . '/../models/EmailOtp.php';
 require_once __DIR__ . '/../utils/JWT.php';
 require_once __DIR__ . '/../utils/Response.php';
 require_once __DIR__ . '/../middlewares/AuthMiddleware.php';
@@ -17,6 +18,15 @@ require_once __DIR__ . '/../config/config.php';
 class AuthController {
     /**
      * POST /auth/register
+     *
+     * Pendaftaran email wajib terverifikasi: frontend mengirim
+     * `verification_token` yang diterbitkan POST /auth/email-otp/verify
+     * setelah kode 5 digit benar. Bila SMTP sudah dikonfigurasi
+     * (MAIL_USERNAME + MAIL_APP_PASSWORD terisi), token wajib ada dan
+     * valid — tanpa itu pendaftaran ditolak 422. Bila SMTP belum
+     * dikonfigurasi (mis. CI tanpa mail), token tetap divalidasi bila
+     * dikirim, supaya jalur lama tidak diam-diam mem-bypass verifikasi
+     * saat mail sudah hidup.
      */
     public static function register(): void {
         $input = json_decode(file_get_contents('php://input'), true) ?: [];
@@ -25,6 +35,7 @@ class AuthController {
         $email = trim($input['email'] ?? '');
         $password = $input['password'] ?? '';
         $role = $input['role'] ?? 'User';
+        $verificationToken = trim((string)($input['verification_token'] ?? ''));
 
         if (!preg_match('/^[a-zA-Z0-9_]{3,20}$/', $username)) {
             ApiResponse::error("Username harus berupa 3-20 karakter alfanumerik atau underscore.", 422);
@@ -39,6 +50,16 @@ class AuthController {
         }
 
         $db = Database::getConnection();
+        $config = require __DIR__ . '/../config/config.php';
+
+        // Verifikasi email wajib bila SMTP dikonfigurasi.
+        $mailConfigured = EmailOtp::isMailConfigured($config);
+        if ($mailConfigured && $verificationToken === '') {
+            ApiResponse::error('Verifikasi email wajib untuk pendaftaran. Minta kode 5 digit ke email Anda, lalu verifikasi dulu.', 422);
+        }
+        if ($verificationToken !== '' && !EmailOtp::consumeToken($db, $email, $verificationToken)) {
+            ApiResponse::error('Kode verifikasi tidak valid, sudah dipakai, atau sudah kedaluwarsa. Minta kode baru.', 422);
+        }
 
         if (User::findByEmail($db, $email)) {
             ApiResponse::error("Email sudah terdaftar.", 400);
@@ -55,7 +76,6 @@ class AuthController {
             'role' => $role === 'Administrator' ? 'Administrator' : 'User',
         ]);
 
-        $config = require __DIR__ . '/../config/config.php';
         $expireMinutes = (int)($config['session']['lifetime_minutes'] ?? $config['jwt']['expire_minutes'] ?? 1440);
         $sessionId = 'sess_' . bin2hex(random_bytes(16));
 

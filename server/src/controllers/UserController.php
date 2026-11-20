@@ -114,6 +114,12 @@ class UserController {
 
     /**
      * PATCH /users/{id}
+     *
+     * Profil sendiri: username & email masing-masing hanya bisa diganti
+     * 1x dalam 7 hari (dicek dari username_changed_at / email_changed_at);
+     * admin yang mengubah akun orang lain tidak kena cooldown. Ganti
+     * password oleh pemilik akun wajib menyertakan password lama
+     * (`current_password`); admin memakai endpoint reset-password.
      */
     public static function update(string $id): void {
         $currentUser = AuthMiddleware::authenticate();
@@ -129,8 +135,21 @@ class UserController {
             ApiResponse::error("Pengguna tidak ditemukan.", 404);
         }
 
+        $isSelf = $currentUser['id'] === $id;
+        $isAdmin = $currentUser['role'] === 'Administrator';
+
         $input = json_decode(file_get_contents('php://input'), true) ?: [];
         $updateData = [];
+
+        // Cooldown 7 hari untuk ganti username/email oleh pemilik akun sendiri.
+        $checkCooldown = static function (?string $changedAt, string $field) use ($isSelf, $isAdmin): void {
+            if (!$isSelf || $isAdmin || empty($changedAt)) return;
+            $next = strtotime((string)$changedAt) + (7 * 86400);
+            if (time() < $next) {
+                $date = date('d M Y', $next);
+                ApiResponse::error("{$field} baru bisa diganti lagi pada {$date} (1x dalam 7 hari).", 422);
+            }
+        };
 
         if (isset($input['username'])) {
             $username = trim($input['username']);
@@ -141,7 +160,11 @@ class UserController {
             if ($existing && $existing['id'] !== $id) {
                 ApiResponse::error("Username sudah digunakan pengguna lain.", 400);
             }
-            $updateData['username'] = $username;
+            if ($username !== $user['username']) {
+                $checkCooldown($user['username_changed_at'] ?? null, 'Username');
+                $updateData['username'] = $username;
+                $updateData['username_changed_at'] = gmdate('Y-m-d H:i:s');
+            }
         }
 
         if (isset($input['email'])) {
@@ -153,7 +176,30 @@ class UserController {
             if ($existing && $existing['id'] !== $id) {
                 ApiResponse::error("Email sudah digunakan pengguna lain.", 400);
             }
-            $updateData['email'] = $email;
+            if (strtolower($email) !== strtolower((string)$user['email'])) {
+                $checkCooldown($user['email_changed_at'] ?? null, 'Email');
+                $updateData['email'] = $email;
+                $updateData['email_changed_at'] = gmdate('Y-m-d H:i:s');
+            }
+        }
+
+        if (array_key_exists('bio', $input)) {
+            $bio = trim((string)$input['bio']);
+            // mb_strlen bila tersedia (hitung per karakter), bila tidak
+            // pakai strlen (hitung per byte — arahnya lebih ketat).
+            $bioLen = function_exists('mb_strlen') ? mb_strlen($bio) : strlen($bio);
+            if ($bioLen > 160) {
+                ApiResponse::error('Bio maksimal 160 karakter.', 422);
+            }
+            $updateData['bio'] = $bio === '' ? null : $bio;
+        }
+
+        if (array_key_exists('avatar', $input)) {
+            $avatar = $input['avatar'];
+            if ($avatar !== null && !is_string($avatar)) {
+                ApiResponse::error('Avatar tidak valid.', 422);
+            }
+            $updateData['avatar'] = $avatar;
         }
 
         if ($currentUser['role'] === 'Administrator' && isset($input['role'])) {
@@ -163,6 +209,14 @@ class UserController {
         if (!empty($input['password'])) {
             if (strlen($input['password']) < 8) {
                 ApiResponse::error("Password minimal 8 karakter.", 422);
+            }
+            // Pemilik akun wajib membuktikan password lama; admin tidak
+            // lewat jalur ini (pakai POST /users/{id}/reset-password).
+            if ($isSelf && !$isAdmin) {
+                $current = (string)($input['current_password'] ?? '');
+                if ($current === '' || !password_verify($current, (string)$user['password_hash'])) {
+                    ApiResponse::error('Password lama salah.', 400);
+                }
             }
             $updateData['password'] = $input['password'];
         }
@@ -199,13 +253,18 @@ class UserController {
     }
 
     /**
-     * DELETE /users/{id} (Admin Only)
+     * DELETE /users/{id}
+     *
+     * Admin boleh menghapus akun pengguna lain. Pemilik akun boleh
+     * menghapus akunnya sendiri (dari halaman Profil); sesi milik akun
+     * itu ikut terhapus lewat ON DELETE CASCADE di tabel sessions.
      */
     public static function delete(string $id): void {
-        $currentUser = AuthMiddleware::requireAdmin();
+        $currentUser = AuthMiddleware::authenticate();
 
-        if ($currentUser['id'] === $id) {
-            ApiResponse::error("Tidak dapat menghapus akun Anda sendiri.", 400);
+        $isSelf = $currentUser['id'] === $id;
+        if (!$isSelf && $currentUser['role'] !== 'Administrator') {
+            ApiResponse::error("Tidak memiliki akses untuk menghapus pengguna ini.", 403);
         }
 
         $db = Database::getConnection();

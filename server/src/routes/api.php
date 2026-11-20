@@ -31,6 +31,9 @@ function registerApiRoutes(Router $router): void {
         $router->post("{$p}/auth/register", [AuthController::class, 'register']);
         $router->post("{$p}/auth/login", [AuthController::class, 'login']);
         $router->post("{$p}/auth/logout", [AuthController::class, 'logout']);
+        // Verifikasi email pendaftaran — kode 5 digit dari forafagroup@gmail.com.
+        $router->post("{$p}/auth/email-otp/send", [EmailOtpController::class, 'send']);
+        $router->post("{$p}/auth/email-otp/verify", [EmailOtpController::class, 'verify']);
         $router->get("{$p}/auth/me", [AuthController::class, 'me']);
         $router->get("{$p}/auth/session", [AuthController::class, 'validateSession']);
         $router->get("{$p}/auth/validate-session", [AuthController::class, 'validateSession']);

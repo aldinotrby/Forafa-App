@@ -12,6 +12,7 @@ USE `forafa_db`;
 -- Table Cleanup
 -- ------------------------------------------------------------------------------
 SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS `email_otps`;
 DROP TABLE IF EXISTS `voting_answers`;
 DROP TABLE IF EXISTS `voting_questions`;
 DROP TABLE IF EXISTS `response_identities`;
@@ -30,6 +31,10 @@ CREATE TABLE `users` (
   `email` VARCHAR(255) NOT NULL,
   `password_hash` VARCHAR(255) NOT NULL,
   `role` VARCHAR(20) NOT NULL DEFAULT 'User',
+  `bio` VARCHAR(160) NULL,
+  `avatar` TEXT NULL,
+  `username_changed_at` DATETIME NULL,
+  `email_changed_at` DATETIME NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_users_username` (`username`),
@@ -153,6 +158,25 @@ CREATE TABLE `voting_answers` (
   KEY `idx_voting_answers_question` (`question_id`),
   CONSTRAINT `fk_voting_answers_response` FOREIGN KEY (`response_id`) REFERENCES `responses` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_voting_answers_question` FOREIGN KEY (`question_id`) REFERENCES `voting_questions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 8. Table: email_otps (Kode verifikasi pendaftaran 5 digit via email)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `email_otps` (
+  `id` VARCHAR(50) NOT NULL,
+  `email` VARCHAR(255) NOT NULL,
+  `otp_hash` VARCHAR(64) NOT NULL,
+  `verification_token` VARCHAR(64) NULL,
+  `token_expires_at` DATETIME NULL,
+  `attempts` INT NOT NULL DEFAULT 0,
+  `status` VARCHAR(20) NOT NULL DEFAULT 'pending',
+  `expires_at` DATETIME NOT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_email_otps_email` (`email`),
+  KEY `idx_email_otps_token` (`verification_token`),
+  KEY `idx_email_otps_expires` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------

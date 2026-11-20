@@ -63,6 +63,7 @@ try {
     output("--------------------------------------------------", $isCli);
     output("Tabel yang dibuat:", $isCli);
     output(" - users", $isCli);
+    output(" - email_otps", $isCli);
     output(" - sessions", $isCli);
     output(" - interactions", $isCli);
     output(" - voting_questions", $isCli);

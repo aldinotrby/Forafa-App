@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { disableGoogleAutoSelect, type GoogleProfile } from './googleAuth'
+import { BIO_MAX_LENGTH, PROFILE_CHANGE_COOLDOWN_MS, bioLength } from './profile'
 
 export type Kind = 'vote' | 'feedback' | 'anon'
 export type Status = 'Baru' | 'Dibaca' | 'Diproses' | 'Selesai'
@@ -14,6 +15,12 @@ export interface User {
   email: string
   role: Role
   avatar?: string
+  /** Bio profil, maksimal 160 karakter. */
+  bio?: string
+  /** Terakhir kali username diganti (ISO) — ganti berikutnya 7 hari lagi. */
+  usernameChangedAt?: string | null
+  /** Terakhir kali email diganti (ISO) — ganti berikutnya 7 hari lagi. */
+  emailChangedAt?: string | null
   /** Cara pengguna pertama kali masuk: password atau Google. */
   provider?: AuthProvider
   /** Subject ID Google (`sub`), hanya untuk akun Google. */
@@ -118,11 +125,26 @@ interface Store {
   loginStatus: 'masuk' | 'keluar'
   /** Jejak tab terakhir ditutup & logout terakhir. */
   sessionHistory: SessionHistory
-  register: (u: { username: string; email: string; password: string }) => string | null
+  register: (u: { username: string; email: string; password: string; verificationToken?: string }) => string | null
   login: (id: string, password: string) => string | null
   /** Login/registrasi dengan profil terverifikasi dari Google Sign-In. */
   loginWithGoogle: (profile: GoogleProfile) => string | null
   logout: () => void
+  /**
+   * Ubah profil sendiri: foto, bio (maks. 160 karakter), username & email
+   * (masing-masing 1x dalam 7 hari). Mengembalikan pesan error atau null.
+   */
+  updateProfile: (patch: { username?: string; email?: string; avatar?: string | null; bio?: string }) => string | null
+  /**
+   * Ganti password akun email (provider 'password'). Akun Google tidak
+   * memakai password lokal — kembalikan error untuk akun Google.
+   */
+  changePassword: (currentPassword: string, newPassword: string) => string | null
+  /**
+   * Hapus akun sendiri beserta semua link & respons miliknya, lalu logout.
+   * Akun email wajib menyertakan password saat ini sebagai konfirmasi.
+   */
+  deleteOwnAccount: (password?: string) => string | null
   adminCreateUser: (u: { username: string; email: string; password: string }) => string | null
   updateUser: (id: string, patch: { username?: string; email?: string; avatar?: string }) => string | null
   resetUserPassword: (id: string, newPassword: string) => string | null
@@ -294,6 +316,9 @@ const normalizeUser = (raw: any): User => ({
   email: String(raw.email || ''),
   role: (raw.role as Role) || 'User',
   avatar: raw.avatar,
+  bio: raw.bio,
+  usernameChangedAt: raw.usernameChangedAt ?? raw.username_changed_at ?? null,
+  emailChangedAt: raw.emailChangedAt ?? raw.email_changed_at ?? null,
 })
 
 function load<T>(key: string, fallback: T, storage: Storage = localStorage): T {
@@ -466,10 +491,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       presence,
       loginStatus: user ? 'masuk' : 'keluar',
       sessionHistory,
-      register: ({ username, email, password }) => {
+      register: ({ username, email, password, verificationToken }) => {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
         if (!/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
         if (password.length < 8) return 'Password minimal 8 karakter.'
+        // Pendaftaran email wajib lewat verifikasi OTP: token sekali pakai
+        // dari POST /auth/email-otp/verify (kode 5 digit dari
+        // forafagroup@gmail.com). Tanpa token, akun tidak dibuat — tidak
+        // ada jalur demo. Akun Google tidak lewat sini (loginWithGoogle).
+        if (!verificationToken) return 'Verifikasi email wajib: minta kode 5 digit ke email Anda dan verifikasi dulu sebelum daftar.'
         if (users.some((u) => u.email === email || u.username.toLowerCase() === username.toLowerCase())) return 'Email atau username sudah terdaftar.'
         const u = { id: uid(), username, email, role: 'User' as Role, password, provider: 'password' as AuthProvider }
         setUsers((p) => [...p, u])
@@ -506,6 +536,93 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setSessionHistory((prev) => ({ ...prev, lastLogoutAt: nowIso() }))
         setSession(null)
         setSessionId(null)
+      },
+      updateProfile: (patch) => {
+        const me = users.find((u) => u.id === sessionId)
+        if (!me) return 'Anda belum login.'
+        const { username, email, avatar, bio } = patch
+        const now = Date.now()
+        const nextDate = (changedAt?: string | null) =>
+          changedAt ? new Date(new Date(changedAt).getTime() + PROFILE_CHANGE_COOLDOWN_MS) : null
+        if (username !== undefined && username !== me.username) {
+          if (!/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
+          if (users.some((u) => u.id !== me.id && u.username.toLowerCase() === username.toLowerCase())) return 'Username sudah digunakan.'
+          const next = nextDate(me.usernameChangedAt)
+          if (next && now < next.getTime()) {
+            return `Username baru bisa diganti lagi pada ${next.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} (1x dalam 7 hari).`
+          }
+        }
+        if (email !== undefined && email !== me.email) {
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
+          if (users.some((u) => u.id !== me.id && u.email === email)) return 'Email sudah digunakan.'
+          const next = nextDate(me.emailChangedAt)
+          if (next && now < next.getTime()) {
+            return `Email baru bisa diganti lagi pada ${next.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} (1x dalam 7 hari).`
+          }
+        }
+        if (bio !== undefined && bioLength(bio) > BIO_MAX_LENGTH) return `Bio maksimal ${BIO_MAX_LENGTH} karakter.`
+        const applied: Partial<User> = {}
+        if (username !== undefined && username !== me.username) {
+          applied.username = username
+          applied.usernameChangedAt = new Date(now).toISOString()
+        }
+        if (email !== undefined && email !== me.email) {
+          applied.email = email
+          applied.emailChangedAt = new Date(now).toISOString()
+        }
+        if (avatar !== undefined) applied.avatar = avatar ?? undefined
+        if (bio !== undefined) applied.bio = bio.trim() === '' ? undefined : bio.trim()
+        if (Object.keys(applied).length === 0) return 'Tidak ada perubahan untuk disimpan.'
+        setUsers((p) => p.map((u) => (u.id === me.id ? { ...u, ...applied } : u)))
+
+        // Sinkronisasi ke backend (PATCH /users/{id} menegakkan aturan
+        // yang sama: cooldown 7 hari & bio maks. 160 karakter).
+        apiCall(`/users/${me.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            ...(applied.username ? { username: applied.username } : {}),
+            ...(applied.email ? { email: applied.email } : {}),
+            ...(avatar !== undefined ? { avatar: avatar ?? null } : {}),
+            ...(bio !== undefined ? { bio: applied.bio ?? null } : {}),
+          }),
+        })
+
+        return null
+      },
+      changePassword: (currentPassword, newPassword) => {
+        const me = users.find((u) => u.id === sessionId)
+        if (!me) return 'Anda belum login.'
+        if (me.provider !== 'password') return 'Akun ini login dengan Google, jadi tidak punya password lokal. Password diatur di akun Google Anda.'
+        if ((me as never as { password: string }).password !== currentPassword) return 'Password lama salah.'
+        if (newPassword.length < 8) return 'Password minimal 8 karakter.'
+        if (newPassword === currentPassword) return 'Password baru harus berbeda dari password lama.'
+        setUsers((p) => p.map((u) => (u.id === me.id ? { ...u, password: newPassword } : u)))
+
+        // Sinkronisasi ke backend (wajib menyertakan password lama).
+        apiCall(`/users/${me.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ password: newPassword, current_password: currentPassword }),
+        })
+
+        return null
+      },
+      deleteOwnAccount: (password) => {
+        const me = users.find((u) => u.id === sessionId)
+        if (!me) return 'Anda belum login.'
+        if (me.provider === 'password' && (me as never as { password: string }).password !== password) {
+          return 'Password salah. Penghapusan akun dibatalkan.'
+        }
+        const userInteractionIds = interactions.filter((i) => i.ownerId === me.id).map((i) => i.id)
+        setUsers((p) => p.filter((u) => u.id !== me.id))
+        setInteractions((p) => p.filter((i) => i.ownerId !== me.id))
+        setResponses((p) => p.filter((r) => !userInteractionIds.includes(r.iid)))
+        setSession(null)
+        setSessionId(null)
+
+        // Sinkronisasi ke backend (DELETE /users/{id} mengizinkan hapus akun sendiri).
+        apiCall(`/users/${me.id}`, { method: 'DELETE' })
+
+        return null
       },
       adminCreateUser: ({ username, email, password }) => {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'

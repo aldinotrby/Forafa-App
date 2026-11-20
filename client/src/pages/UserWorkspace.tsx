@@ -3,9 +3,10 @@ import { useStore, type Interaction, type Kind, type Response, type Status, type
 import { loadSeenResponseIds, markResponseSeen, markResponsesSeen } from '../services/ownerNotifications'
 import { MediaUpload } from '../components/MediaUpload'
 import { SessionStatus } from '../components/SessionStatus'
+import Profile from './Profile'
 import { Bar, Btn, Card, Field, KIND, KindBadge, Logo, Paginated, QR, STATUSES, StatusPill, exportCsv, fmtDate, inputCls, publicUrl } from '../components/ui'
 
-type Nav = 'home' | Kind | 'flow' | 'notif'
+type Nav = 'home' | Kind | 'flow' | 'notif' | 'profil'
 
 export default function UserWorkspace({ asUserId, onBack, adminBanner, initialOpenId }: { asUserId?: string; onBack?: () => void; adminBanner?: string; initialOpenId?: string } = {}) {
   const { user, logout, interactions } = useStore()
@@ -37,6 +38,9 @@ export default function UserWorkspace({ asUserId, onBack, adminBanner, initialOp
     { id: 'anon', label: 'Pesan Anonim', icon: KIND.anon.icon },
     { id: 'flow', label: 'Alur Kerja', icon: '⇢' },
     { id: 'notif', label: 'Notifikasi', icon: '🔔' },
+    // Profil selalu milik akun yang login; saat admin sedang melihat
+    // workspace pengguna lain, menu ini disembunyikan.
+    ...(onBack ? [] : [{ id: 'profil' as Nav, label: 'Profil', icon: '◉' }]),
   ]
 
   return (
@@ -83,6 +87,8 @@ export default function UserWorkspace({ asUserId, onBack, adminBanner, initialOp
       <main className="min-w-0 p-5 sm:p-8">
         {open ? (
           <Detail it={open} back={() => setOpenId(null)} seenIds={seenIds} onSeenChange={setSeenIds} />
+        ) : nav === 'profil' ? (
+          <Profile />
         ) : nav === 'flow' ? (
           <Flow />
         ) : nav === 'notif' ? (
@@ -121,7 +127,7 @@ function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername, seenI
 }) {
   const { user, interactions } = useStore()
   const { mine, resp } = useMine(effectiveUserId)
-  const kind = nav === 'home' || nav === 'flow' || nav === 'notif' ? null : nav
+  const kind = nav === 'home' || nav === 'flow' || nav === 'notif' || nav === 'profil' ? null : nav
   const list = kind ? mine.filter((i) => i.kind === kind) : mine
   const count = (k: Kind) => mine.filter((i) => i.kind === k).length
   const recent = [...resp].sort((a, b) => +new Date(b.at) - +new Date(a.at)).slice(0, 6)

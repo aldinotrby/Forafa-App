@@ -115,17 +115,10 @@ return [
         // dipakai untuk menyelesaikan POST /auth/register.
         'token_expire_minutes' => (int) env('EMAIL_OTP_TOKEN_EXPIRE_MINUTES', 15),
     ],
-    'whatsapp_otp' => [
-        'provider' => env('WHATSAPP_PROVIDER', 'mock'), // 'mock', 'fonnte', 'wablas', 'twilio'
-        'api_key' => env('WHATSAPP_API_KEY', ''),
-        'otp_expire_minutes' => (int)env('OTP_EXPIRE_MINUTES', 5),
-        'max_attempts' => (int)env('OTP_MAX_ATTEMPTS', 3),
-    ],
     'rate_limit' => [
         'enabled' => (bool)env('RATE_LIMIT_ENABLED', true),
         'api_max_requests' => (int)env('RATE_LIMIT_API_MAX', 60),       // Max 60 req/min for general API
         'submit_max_requests' => (int)env('RATE_LIMIT_SUBMIT_MAX', 5),  // Max 5 submit req/min per IP
-        'otp_max_requests' => (int)env('RATE_LIMIT_OTP_MAX', 3),        // Max 3 OTP sends per 10 min
     ],
     'anti_spam' => [
         'honeypot_enabled' => (bool)env('SPAM_HONEYPOT_ENABLED', true),

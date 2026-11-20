@@ -167,6 +167,27 @@ class ResponseController {
     }
 
     /**
+     * GET /responses/mine
+     * Riwayat pengisian milik akun yang sedang login (hanya data milik
+     * sendiri): respons yang dikirim saat sesi login aktif — kolom
+     * `user_id` diisi PublicController saat submit. Identitas yang
+     * di-anonimkan tetap tampil sebagai Anonim. Dipakai untuk riwayat
+     * pengisi dari backend; tanpa login, endpoint ini menolak (401).
+     */
+    public static function mine(): void {
+        $currentUser = AuthMiddleware::authenticate();
+
+        $skip = max(0, (int)($_GET['skip'] ?? 0));
+        $limit = max(1, min(500, (int)($_GET['limit'] ?? 200)));
+
+        $db = Database::getConnection();
+        ResponseModel::ensureTablesExist($db);
+
+        $responses = ResponseModel::getByUser($db, $currentUser['id'], $skip, $limit);
+        ApiResponse::json($responses, 200);
+    }
+
+    /**
      * DELETE /responses/{id}
      * Delete response. Restricted to creator or Administrator.
      */

@@ -9,10 +9,10 @@ import VoterLogin from './VoterLogin'
  * Dashboard pengisi link (`#/riwayat`): profil, riwayat voting, riwayat
  * kritik & saran, riwayat pesan anonim, link voting yang pernah diisi,
  * serta status & detail balasan dari pembuat link — untuk identitas
- * terverifikasi (Google / WhatsApp) yang tersimpan di perangkat ini.
+ * terverifikasi (Google) yang tersimpan di perangkat ini.
  *
  * Identitas ditambahkan saat pengisi verifikasi di awal pengisian sebuah
- * link (Google / WhatsApp OTP di halaman publik), atau lewat layar login
+ * link (Login Google di halaman publik), atau lewat layar login
  * di dashboard ini sendiri (`VoterLogin`) — masuk dengan identitas yang
  * sudah ada, atau daftar sebagai pengisi baru. Tidak ada data demo.
  *
@@ -235,7 +235,7 @@ export default function VoterDashboard() {
             <HistorySection
               id="kritik-saran"
               title="Riwayat kritik & saran"
-              empty="Belum ada kritik & saran dari identitas ini. Isi kritik & saran lewat linknya — verifikasi Google / WhatsApp OTP di awal — agar tercatat di sini beserta balasannya."
+              empty="Belum ada kritik & saran dari identitas ini. Isi kritik & saran lewat linknya — verifikasi Google di awal — agar tercatat di sini beserta balasannya."
               items={feedbackResponses}
               findInteraction={findInteraction}
               openReplyId={openReplyId}
@@ -250,7 +250,7 @@ export default function VoterDashboard() {
             <HistorySection
               id="pesan-anonim"
               title="Riwayat pesan anonim"
-              empty="Belum ada pesan anonim dari identitas ini. Isi pesan anonim lewat linknya — verifikasi Google / WhatsApp OTP di awal — agar tercatat di sini beserta balasannya. Pemilik link tetap melihat kiriman Anda sebagai “Anonim”."
+              empty="Belum ada pesan anonim dari identitas ini. Isi pesan anonim lewat linknya — verifikasi Google di awal — agar tercatat di sini beserta balasannya. Pemilik link tetap melihat kiriman Anda sebagai “Anonim”."
               items={anonResponses}
               findInteraction={findInteraction}
               openReplyId={openReplyId}
@@ -263,7 +263,7 @@ export default function VoterDashboard() {
 
             <p className="text-center text-xs text-mute">
               Riwayat dihitung dari perangkat &amp; browser ini saja (data tersimpan lokal). Setiap kiriman tercatat
-              karena Anda verifikasi dengan Google / WhatsApp OTP di awal sebelum mengisi link.
+              karena Anda verifikasi dengan Google di awal sebelum mengisi link.
               {' '}<a href="#/" className="font-semibold text-brand hover:underline">← Kembali ke beranda</a>
             </p>
           </>

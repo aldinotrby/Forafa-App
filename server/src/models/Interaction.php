@@ -28,6 +28,7 @@ class Interaction {
             'start' => $row['start'] ?? null,
             'end' => $row['end'] ?? null,
             'options' => is_array($options) ? array_values($options) : [],
+            'recommendation_enabled' => (bool)($row['recommendation_enabled'] ?? 0),
             'created_at' => !empty($row['created_at'])
                 ? gmdate('Y-m-d\TH:i:s\Z', strtotime($row['created_at']))
                 : null,
@@ -54,6 +55,7 @@ class Interaction {
             'end' => $row['end'] ?? null,
             'options' => is_array($options) ? array_values($options) : [],
             'is_closed' => self::isClosed($row),
+            'recommendation_enabled' => (bool)($row['recommendation_enabled'] ?? 0),
         ];
     }
 
@@ -132,7 +134,24 @@ class Interaction {
         return array_map([self::class, 'format'], $stmt->fetchAll());
     }
 
+    /**
+     * Merge be/server: kolom recommendation_enabled wajib ada sebelum
+     * create()/update() menyentuhnya. DB baru sudah memilikinya via
+     * database.sql; helper ini menambalnya pada DB lama tanpa setup ulang.
+     */
+    private static function ensureRecommendationColumn(PDO $db): void {
+        try {
+            $has = $db->query("SHOW COLUMNS FROM `interactions` LIKE 'recommendation_enabled'")->fetch();
+            if (!$has) {
+                $db->exec("ALTER TABLE `interactions` ADD COLUMN `recommendation_enabled` TINYINT(1) NOT NULL DEFAULT 0 AFTER `options`");
+            }
+        } catch (Throwable $e) {
+            // Biarkan INSERT/UPDATE yang memutuskan; setup.php adalah jalan utama.
+        }
+    }
+
     public static function create(PDO $db, array $data, string $ownerId, ?string $customId = null): array {
+        self::ensureRecommendationColumn($db);
         $id = $customId ?? ('i_' . bin2hex(random_bytes(4)));
         $baseSlug = !empty($data['slug']) ? Slug::create($data['slug']) : Slug::create($data['title']);
         $finalSlug = Slug::makeUnique($db, $baseSlug);
@@ -143,8 +162,8 @@ class Interaction {
         $active = isset($data['active']) ? (int)(bool)$data['active'] : 1;
 
         $stmt = $db->prepare("
-            INSERT INTO interactions (id, owner_id, kind, title, description, slug, active, start, end, options, created_at)
-            VALUES (:id, :owner_id, :kind, :title, :description, :slug, :active, :start, :end, :options, :created_at)
+            INSERT INTO interactions (id, owner_id, kind, title, description, slug, active, start, end, options, recommendation_enabled, created_at)
+            VALUES (:id, :owner_id, :kind, :title, :description, :slug, :active, :start, :end, :options, :recommendation_enabled, :created_at)
         ");
         $stmt->execute([
             ':id' => $id,
@@ -157,6 +176,7 @@ class Interaction {
             ':start' => !empty($data['start']) ? $data['start'] : null,
             ':end' => !empty($data['end']) ? $data['end'] : null,
             ':options' => $optionsJson,
+            ':recommendation_enabled' => !empty($data['recommendation_enabled']) ? 1 : 0,
             ':created_at' => $now,
         ]);
 
@@ -171,6 +191,7 @@ class Interaction {
             'start' => $data['start'] ?? null,
             'end' => $data['end'] ?? null,
             'options' => $optionsJson,
+            'recommendation_enabled' => !empty($data['recommendation_enabled']) ? 1 : 0,
             'created_at' => $now,
         ]);
     }
@@ -203,6 +224,11 @@ class Interaction {
             $fields[] = "options = :options";
             $opts = $data['options'];
             $params[':options'] = is_string($opts) ? $opts : json_encode(array_values((array)$opts), JSON_UNESCAPED_UNICODE);
+        }
+        if (array_key_exists('recommendation_enabled', $data)) {
+            self::ensureRecommendationColumn($db);
+            $fields[] = "recommendation_enabled = :recommendation_enabled";
+            $params[':recommendation_enabled'] = !empty($data['recommendation_enabled']) ? 1 : 0;
         }
 
         if (!empty($fields)) {

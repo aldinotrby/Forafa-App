@@ -86,6 +86,26 @@ Gunakan akun demo berikut untuk menguji berbagai peran dan fitur aplikasi:
 
 ---
 
+## 👤 Registrasi dan Pengelolaan Akun Pengisi
+
+- Menyimpan data akun pengisi.
+- Mengintegrasikan Google OAuth.
+- Menghubungkan akun dengan riwayat voting.
+- Menghubungkan akun dengan kritik dan saran.
+- Menyediakan identitas pengirim pada panel admin sesuai hak akses privasi.
+
+---
+
+## 📊 Sistem Dashboard dan Balasan
+
+- Menyimpan riwayat pengisian.
+- Menghubungkan riwayat dengan link voting.
+- Menyimpan balasan dari pembuat link.
+- Mengirim notifikasi balasan.
+- Mengatur agar hanya pemilik akun yang dapat melihat riwayat dan balasannya.
+
+---
+
 ## 🔍 Verifikasi Integrasi Server
 
 Untuk memastikan seluruh layanan terhubung dengan benar tanpa masalah CORS atau jaringan:

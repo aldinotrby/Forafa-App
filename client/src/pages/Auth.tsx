@@ -42,9 +42,9 @@ export default function Auth() {
     if (!googleConfigured) return
     let cleanup: (() => void) | undefined
     let cancelled = false
-    initGoogleSignIn(({ profile, error }) => {
+    initGoogleSignIn(({ profile, credential, error }) => {
       if (error) setErr(error)
-      else if (profile) setErr(googleLoginRef.current(profile))
+      else if (profile) setErr(googleLoginRef.current(profile, credential))
     }, googleBtnRef.current)
       .then((fn) => {
         if (cancelled) fn()

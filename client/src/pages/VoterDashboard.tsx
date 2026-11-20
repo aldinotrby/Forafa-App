@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import { useStore, type Interaction, type Response } from '../services/store'
+import { useEffect, useState } from 'react'
+import { useStore, type Kind, type Response } from '../services/store'
+import { fetchMyResponses, mergeHistories, type ServerResponseItem } from '../services/myResponses'
 import { loadIdentities, removeIdentity, type VerifiedVoter } from '../services/otpService'
 import { loadSeenReplyIds, markRepliesSeen, markReplySeen } from '../services/replyNotifications'
 import { Btn, Card, KindBadge, Logo, StatusPill, fmtDate } from '../components/ui'
@@ -23,9 +24,40 @@ import VoterLogin from './VoterLogin'
  * pengisi masuk lewat layar login, kiriman lama di perangkat ini yang
  * memakai `voterKey` yang sama langsung ikut tampil — riwayat tidak
  * mulai dari 0 bila ia sudah pernah mengisi link sebelumnya.
+ *
+ * Riwayat dari server: bila pengguna masuk dengan akun Forafa, dashboard
+ * juga mengambil `GET /responses/mine` — kiriman yang dibuat saat masuk
+ * (di perangkat mana pun) karena submit publik menyertakan JWT akun
+ * sehingga backend mencatat `user_id`-nya. Kiriman server digabung ke
+ * riwayat identitas yang cocok (akun Google → identitas Google yang
+ * sama; akun email → pilihan "Akun Forafa" sendiri) dan ditandai lencana
+ * "Server". Bila server tidak terjangkau, dashboard tetap menampilkan
+ * riwayat lokal.
  */
+
+/** Identitas yang bisa dipilih: identitas voter (Google) atau akun
+    Forafa yang sedang login (riwayat server). */
+interface DashboardIdentity {
+  key: string
+  label: string
+  kind: 'voter' | 'account'
+  method?: 'google' | 'whatsapp'
+  verifiedAt?: string
+}
+
+/** Link yang dirujuk satu kiriman — dari data lokal, atau dari kolom
+    backend bila linknya tidak ada di perangkat ini. */
+interface ResolvedInteraction {
+  title: string
+  slug: string
+  kind: Kind
+  /** undefined = status tidak diketahui (kiriman server yang linknya
+      tidak ada di perangkat ini). */
+  active?: boolean
+}
+
 export default function VoterDashboard() {
-  const { interactions, responses } = useStore()
+  const { user, session, logout, interactions, responses } = useStore()
   const [identities, setIdentities] = useState<VerifiedVoter[]>(() => loadIdentities())
   const [selectedKey, setSelectedKey] = useState<string>(() => loadIdentities()[0]?.key ?? '')
   const [openReplyId, setOpenReplyId] = useState<string | null>(null)
@@ -35,6 +67,110 @@ export default function VoterDashboard() {
   const [showLogin, setShowLogin] = useState(false)
   /** Info login terakhir — dipakai banner "riwayat ditemukan". */
   const [justLoggedIn, setJustLoggedIn] = useState<{ label: string; count: number } | null>(null)
+  /** Kiriman milik akun login dari server (`GET /responses/mine`). */
+  const [serverResponses, setServerResponses] = useState<ServerResponseItem[] | null>(null)
+  const [serverState, setServerState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
+
+  /** Kunci identitas yang mewakili akun Forafa yang sedang login:
+      akun Google → `google:<sub>` (sama dengan voterKey-nya); akun email
+      → `account:<id>` (tidak punya voterKey, jadi tampil sebagai
+      pilihan identitas sendiri). */
+  const accountKey = user ? (user.googleId ? `google:${user.googleId}` : `account:${user.id}`) : null
+  const accountIdentity: DashboardIdentity | null =
+    user && accountKey
+      ? {
+          key: accountKey,
+          label: `Akun Forafa · ${user.username}`,
+          kind: 'account',
+          method: user.googleId ? 'google' : undefined,
+          verifiedAt: session?.loginAt,
+        }
+      : null
+  const voterIdentities: DashboardIdentity[] = identities.map((v) => ({
+    key: v.key,
+    label: v.label,
+    kind: 'voter',
+    method: v.method,
+    verifiedAt: v.verifiedAt,
+  }))
+  /** Akun tidak diduplikasi bila kuncinya sudah ada sebagai identitas voter. */
+  const allIdentities: DashboardIdentity[] = [
+    ...voterIdentities,
+    ...(accountIdentity && !voterIdentities.some((v) => v.key === accountIdentity.key) ? [accountIdentity] : []),
+  ]
+
+  /** Bila belum ada identitas voter yang dipilih tetapi akun login ada,
+      pilih identitas akun supaya riwayat server langsung tampil. */
+  useEffect(() => {
+    if (!selectedKey && accountIdentity) setSelectedKey(accountIdentity.key)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKey, accountKey])
+
+  /** Ambil riwayat server saat akun login tersedia. Token backend
+      (`fa_token`) diisi sesaat setelah login — bila belum ada saat
+      dashboard dibuka, coba sekali lagi setelah 2 detik. */
+  useEffect(() => {
+    if (!user) {
+      setServerResponses(null)
+      setServerState('idle')
+      return
+    }
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const run = async () => {
+      setServerState('loading')
+      const rows = await fetchMyResponses()
+      if (cancelled) return
+      if (rows !== null) {
+        setServerState('ok')
+        setServerResponses(rows)
+        return
+      }
+      let hasToken = false
+      try {
+        hasToken = Boolean(sessionStorage.getItem('fa_token'))
+      } catch {
+        hasToken = false
+      }
+      if (!hasToken) {
+        timer = setTimeout(async () => {
+          if (cancelled) return
+          const retry = await fetchMyResponses()
+          if (cancelled) return
+          if (retry === null) {
+            setServerState('error')
+            setServerResponses(null)
+          } else {
+            setServerState('ok')
+            setServerResponses(retry)
+          }
+        }, 2000)
+        return
+      }
+      setServerState('error')
+      setServerResponses(null)
+    }
+    void run()
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
+
+  /** Muat ulang riwayat server (tombol "Perbarui"). */
+  const refreshServer = async () => {
+    if (!user) return
+    setServerState('loading')
+    const rows = await fetchMyResponses()
+    if (rows === null) {
+      setServerState('error')
+      setServerResponses(null)
+    } else {
+      setServerState('ok')
+      setServerResponses(rows)
+    }
+  }
 
   /** Identitas sudah disimpan oleh VoterLogin; muat ulang, pilih, dan
       hitung berapa kiriman lama yang ikut tampil untuk identitas itu. */
@@ -45,32 +181,58 @@ export default function VoterDashboard() {
     setShowLogin(false)
   }
 
-  const selected = identities.find((v) => v.key === selectedKey) ?? identities[0] ?? null
-
-  const findInteraction = (iid: string) => interactions.find((i) => i.id === iid)
-  const myResponses = selected
-    ? [...responses.filter((r) => r.voterKey === selected.key)].sort((a, b) => +new Date(b.at) - +new Date(a.at))
+  const selected = allIdentities.find((v) => v.key === selectedKey) ?? allIdentities[0] ?? null
+  /** Riwayat server hanya berlaku untuk identitas yang mewakili akun
+      login (identitas Google yang sama, atau pilihan "Akun Forafa"). */
+  const serverApplies = accountKey !== null && selected?.key === accountKey
+  /** Pool lokal untuk dedupe: identitas akun tidak punya voterKey, jadi
+      semua kiriman lokal dipakai sebagai pembanding. */
+  const baseLocal = selected
+    ? selected.kind === 'account'
+      ? responses
+      : responses.filter((r) => r.voterKey === selected.key)
     : []
-  const voteResponses = myResponses.filter((r) => findInteraction(r.iid)?.kind === 'vote')
-  const feedbackResponses = myResponses.filter((r) => findInteraction(r.iid)?.kind === 'feedback')
+  const merged = serverApplies && serverResponses ? mergeHistories(baseLocal, serverResponses) : [...baseLocal]
+  /** Tampilan akun hanya berisi kiriman server (yang cocok dengan lokal
+      sudah digabung menjadi versi server); tampilan voter berisi kiriman
+      lokalnya ditambah kiriman server yang tidak punya padanan lokal. */
+  const myResponses = (
+    selected?.kind === 'account'
+      ? merged.filter((r) => r.fromServer)
+      : merged.filter((r) => r.voterKey === selected?.key || r.fromServer)
+  ).sort((a, b) => +new Date(b.at) - +new Date(a.at))
+
+  const resolveInteraction = (r: Response): ResolvedInteraction | undefined => {
+    const local = interactions.find((i) => i.id === r.iid)
+    if (local) return { title: local.title, slug: local.slug, kind: local.kind, active: local.active }
+    if (r.fromServer) {
+      return {
+        title: r.interactionTitle ?? 'Link dihapus',
+        slug: r.interactionSlug ?? '',
+        kind: r.interactionKind ?? 'feedback',
+        active: undefined,
+      }
+    }
+    return undefined
+  }
+  const voteResponses = myResponses.filter((r) => resolveInteraction(r)?.kind === 'vote')
+  const feedbackResponses = myResponses.filter((r) => resolveInteraction(r)?.kind === 'feedback')
   /** Pesan anonim dipisah dari kritik & saran agar balasan atas pesan
       anonim mudah ditemukan — sebelumnya tercampur di satu daftar. */
-  const anonResponses = myResponses.filter((r) => findInteraction(r.iid)?.kind === 'anon')
-  const repliesReceived = myResponses.filter((r) => r.reply && findInteraction(r.iid)?.kind !== 'vote').length
+  const anonResponses = myResponses.filter((r) => resolveInteraction(r)?.kind === 'anon')
+  const repliesReceived = myResponses.filter((r) => r.reply && resolveInteraction(r)?.kind !== 'vote').length
   /** Balasan yang belum dibaca untuk identitas yang dipilih. */
-  const unseen = selected
-    ? [...responses.filter((r) => r.voterKey === selected.key && r.reply && !seenIds.includes(r.id))].sort((a, b) => +new Date(b.at) - +new Date(a.at))
-    : []
+  const unseen = myResponses.filter((r) => r.reply && !seenIds.includes(r.id))
 
   // Link voting yang pernah diisi (unik per interaksi, beserta pengisian terakhir).
   const voteLinks = (() => {
-    const map = new Map<string, { it: Interaction; lastAt: string; count: number }>()
+    const map = new Map<string, { it: ResolvedInteraction; lastAt: string; count: number }>()
     for (const r of voteResponses) {
-      const it = findInteraction(r.iid)
+      const it = resolveInteraction(r)
       if (!it) continue
-      const prev = map.get(it.id)
-      if (prev) map.set(it.id, { ...prev, count: prev.count + 1, lastAt: r.at > prev.lastAt ? r.at : prev.lastAt })
-      else map.set(it.id, { it, lastAt: r.at, count: 1 })
+      const prev = map.get(r.iid)
+      if (prev) map.set(r.iid, { ...prev, count: prev.count + 1, lastAt: r.at > prev.lastAt ? r.at : prev.lastAt })
+      else map.set(r.iid, { it, lastAt: r.at, count: 1 })
     }
     return [...map.values()].sort((a, b) => +new Date(b.lastAt) - +new Date(a.lastAt))
   })()
@@ -99,8 +261,8 @@ export default function VoterDashboard() {
           <p className="mt-1 text-sm text-mute">Voting, kritik &amp; saran, dan balasan dari pembuat link — untuk identitas terverifikasi Anda.</p>
         </header>
 
-        {showLogin || identities.length === 0 || !selected ? (
-          <VoterLogin onLoggedIn={handleLoggedIn} onCancel={identities.length > 0 ? () => setShowLogin(false) : undefined} />
+        {showLogin || allIdentities.length === 0 || !selected ? (
+          <VoterLogin onLoggedIn={handleLoggedIn} onCancel={allIdentities.length > 0 ? () => setShowLogin(false) : undefined} />
         ) : (
           <>
             {/* Banner riwayat yang ikut tampil setelah masuk */}
@@ -119,7 +281,7 @@ export default function VoterDashboard() {
 
             {/* Pilihan identitas */}
             <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Pilih identitas">
-              {identities.map((v) => (
+              {allIdentities.map((v) => (
                 <button
                   key={v.key}
                   onClick={() => setSelectedKey(v.key)}
@@ -128,10 +290,45 @@ export default function VoterDashboard() {
                     selectedKey === v.key ? 'border-brand bg-brand text-white' : 'border-line bg-white text-mute hover:bg-ground'
                   }`}
                 >
-                  {v.method === 'google' ? 'G ' : '💬 '} {v.label}
+                  {v.kind === 'account' ? 'Akun · ' : v.method === 'google' ? 'G ' : '💬 '} {v.label}
                 </button>
               ))}
             </div>
+
+            {/* Status riwayat server (hanya untuk identitas akun login) */}
+            {serverApplies && (
+              <div
+                className={`flex flex-wrap items-center gap-3 rounded-xl border p-4 text-sm leading-relaxed ${
+                  serverState === 'error'
+                    ? 'border-amber-200 bg-amber-50 text-amber-900'
+                    : 'border-line bg-white text-mute'
+                }`}
+                role="status"
+              >
+                {serverState === 'loading' && <p className="min-w-0 flex-1">Memuat riwayat dari server…</p>}
+                {serverState === 'ok' && (
+                  <>
+                    <p className="min-w-0 flex-1">
+                      Riwayat server dimuat — <b>{serverResponses?.length ?? 0} kiriman</b> dari akun ini (dari perangkat mana pun).
+                      Kiriman server ditandai lencana “Server”.
+                    </p>
+                    <Btn variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => void refreshServer()}>Perbarui</Btn>
+                  </>
+                )}
+                {serverState === 'error' && (
+                  <>
+                    <p className="min-w-0 flex-1">
+                      Riwayat server tidak bisa dimuat — backend tidak terjangkau atau sesi akun sudah berakhir.
+                      Riwayat lokal di perangkat ini tetap tampil.
+                    </p>
+                    <Btn variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => void refreshServer()}>Coba lagi</Btn>
+                  </>
+                )}
+                {serverState === 'idle' && (
+                  <p className="min-w-0 flex-1">Riwayat server akan dimuat untuk akun ini.</p>
+                )}
+              </div>
+            )}
 
             {/* Notifikasi balasan baru dari pembuat link */}
             {unseen.length > 0 && (
@@ -152,14 +349,26 @@ export default function VoterDashboard() {
               </span>
               <div className="min-w-0 flex-1">
                 <h2 className="truncate font-display text-2xl font-extrabold">{selected.label}</h2>
-                <p className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-mute">
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                    ✓ Terverifikasi · {selected.method === 'google' ? 'Google' : 'WhatsApp OTP'}
-                  </span>
-                  <span>Terverifikasi {fmtDate(selected.verifiedAt)}</span>
-                </p>
+                {selected.kind === 'account' ? (
+                  <p className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-mute">
+                    <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-700">Akun Forafa</span>
+                    {selected.verifiedAt && <span>Masuk {fmtDate(selected.verifiedAt)}</span>}
+                    <span>Riwayat dari server — kiriman saat masuk dengan akun ini.</span>
+                  </p>
+                ) : (
+                  <p className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-mute">
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                      ✓ Terverifikasi · {selected.method === 'google' ? 'Google' : 'WhatsApp OTP'}
+                    </span>
+                    {selected.verifiedAt && <span>Terverifikasi {fmtDate(selected.verifiedAt)}</span>}
+                  </p>
+                )}
               </div>
-              <Btn variant="ghost" className="text-xs" onClick={() => dropIdentity(selected.key)}>Hapus dari perangkat</Btn>
+              {selected.kind === 'account' ? (
+                <Btn variant="ghost" className="text-xs" onClick={logout}>Keluar</Btn>
+              ) : (
+                <Btn variant="ghost" className="text-xs" onClick={() => dropIdentity(selected.key)}>Hapus dari perangkat</Btn>
+              )}
             </Card>
 
             {/* Statistik ringkas */}
@@ -184,15 +393,21 @@ export default function VoterDashboard() {
                 <Card className="p-6 text-center text-sm text-mute">Belum ada voting yang diisi dengan identitas ini.</Card>
               ) : (
                 <div className="grid gap-3 md:grid-cols-2">
-                  {voteLinks.map(({ it, lastAt, count }) => (
-                    <Card key={it.id} className="p-5">
+                  {voteLinks.map(({ it, lastAt, count }, k) => (
+                    <Card key={`${it.slug || it.title}-${k}`} className="p-5">
                       <div className="flex items-center justify-between gap-2">
                         <KindBadge k={it.kind} />
-                        <span className={`text-xs font-semibold ${it.active ? 'text-emerald-600' : 'text-mute'}`}>{it.active ? '● Aktif' : '○ Nonaktif'}</span>
+                        {it.active === undefined ? (
+                          <span className="text-xs font-semibold text-mute">Server</span>
+                        ) : (
+                          <span className={`text-xs font-semibold ${it.active ? 'text-emerald-600' : 'text-mute'}`}>{it.active ? '● Aktif' : '○ Nonaktif'}</span>
+                        )}
                       </div>
                       <h3 className="mt-3 font-display text-lg font-bold leading-snug">{it.title}</h3>
                       <p className="mt-1 text-sm text-mute">{count} suara · terakhir {fmtDate(lastAt)}</p>
-                      <a href={`#/p/${it.slug}`} className="mt-3 inline-block text-sm font-semibold text-brand hover:underline">Buka link ↗</a>
+                      {it.slug ? (
+                        <a href={`#/p/${it.slug}`} className="mt-3 inline-block text-sm font-semibold text-brand hover:underline">Buka link ↗</a>
+                      ) : null}
                     </Card>
                   ))}
                 </div>
@@ -207,15 +422,20 @@ export default function VoterDashboard() {
               ) : (
                 <Card className="divide-y divide-line px-5">
                   {voteResponses.map((r) => {
-                    const it = findInteraction(r.iid)
+                    const it = resolveInteraction(r)
                     return (
                       <div key={r.id} className="flex flex-wrap items-center gap-2 py-4 text-sm">
                         <span className="min-w-0 flex-1">
                           <b>{it?.title ?? 'Link dihapus'}</b>
                           <span className="block truncate text-mute">{r.choice}</span>
                         </span>
+                        {r.fromServer && (
+                          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-700">Server</span>
+                        )}
                         <StatusPill s={r.status} />
-                        <a href={it ? `#/p/${it.slug}` : undefined} className="shrink-0 text-xs font-semibold text-brand hover:underline">Lihat link</a>
+                        {it?.slug ? (
+                          <a href={`#/p/${it.slug}`} className="shrink-0 text-xs font-semibold text-brand hover:underline">Lihat link</a>
+                        ) : null}
                         <time className="w-28 shrink-0 text-right text-xs text-mute">{fmtDate(r.at)}</time>
                       </div>
                     )
@@ -230,7 +450,7 @@ export default function VoterDashboard() {
               title="Riwayat kritik & saran"
               empty="Belum ada kritik & saran dari identitas ini. Isi kritik & saran lewat linknya — verifikasi Google di awal — agar tercatat di sini beserta balasannya."
               items={feedbackResponses}
-              findInteraction={findInteraction}
+              findInteraction={resolveInteraction}
               openReplyId={openReplyId}
               seenIds={seenIds}
               onToggleReply={(r, open) => {
@@ -245,7 +465,7 @@ export default function VoterDashboard() {
               title="Riwayat pesan anonim"
               empty="Belum ada pesan anonim dari identitas ini. Isi pesan anonim lewat linknya — verifikasi Google di awal — agar tercatat di sini beserta balasannya. Pemilik link tetap melihat kiriman Anda sebagai “Anonim”."
               items={anonResponses}
-              findInteraction={findInteraction}
+              findInteraction={resolveInteraction}
               openReplyId={openReplyId}
               seenIds={seenIds}
               onToggleReply={(r, open) => {
@@ -255,8 +475,9 @@ export default function VoterDashboard() {
             />
 
             <p className="text-center text-xs text-mute">
-              Riwayat dihitung dari perangkat &amp; browser ini saja (data tersimpan lokal). Setiap kiriman tercatat
-              karena Anda verifikasi dengan Google di awal sebelum mengisi link.
+              Riwayat lokal dihitung dari perangkat &amp; browser ini saja (data tersimpan lokal).
+              Bila Anda masuk dengan akun Forafa, kiriman yang dibuat saat masuk juga tersimpan di server
+              dan tampil di sini dengan lencana “Server” — dari perangkat mana pun.
               {' '}<a href="#/" className="font-semibold text-brand hover:underline">← Kembali ke beranda</a>
             </p>
           </>
@@ -273,7 +494,7 @@ function HistorySection({ id, title, empty, items, findInteraction, openReplyId,
   title: string
   empty: string
   items: Response[]
-  findInteraction: (iid: string) => Interaction | undefined
+  findInteraction: (r: Response) => ResolvedInteraction | undefined
   openReplyId: string | null
   seenIds: string[]
   onToggleReply: (r: Response, open: boolean) => void
@@ -286,7 +507,7 @@ function HistorySection({ id, title, empty, items, findInteraction, openReplyId,
       ) : (
         <div className="space-y-3">
           {items.map((r) => {
-            const it = findInteraction(r.iid)
+            const it = findInteraction(r)
             const open = openReplyId === r.id
             return (
               <Card key={r.id} className="p-5">
@@ -294,6 +515,9 @@ function HistorySection({ id, title, empty, items, findInteraction, openReplyId,
                   <b className="flex-1">{it?.title ?? 'Link dihapus'}</b>
                   {r.reply && !seenIds.includes(r.id) && (
                     <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">BARU</span>
+                  )}
+                  {r.fromServer && (
+                    <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-700">Server</span>
                   )}
                   {it && <KindBadge k={it.kind} />}
                   <StatusPill s={r.status} />

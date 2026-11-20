@@ -110,6 +110,15 @@ export interface Response {
   verifiedVia?: 'google' | 'whatsapp'
   /** Label tampil identitas terverifikasi (email / nomor tersamarkan untuk data lama). */
   verificationLabel?: string
+  /**
+   * Kiriman dari server (GET /responses/mine), bukan dari localStorage.
+   * Judul/slug/jenis link ikut dari backend supaya kiriman yang dibuat di
+   * perangkat lain tetap tampil meski linknya tidak ada di perangkat ini.
+   */
+  fromServer?: boolean
+  interactionTitle?: string
+  interactionSlug?: string
+  interactionKind?: Kind
 }
 
 interface Store {
@@ -127,8 +136,11 @@ interface Store {
   sessionHistory: SessionHistory
   register: (u: { username: string; email: string; password: string; verificationToken?: string }) => string | null
   login: (id: string, password: string) => string | null
-  /** Login/registrasi dengan profil terverifikasi dari Google Sign-In. */
-  loginWithGoogle: (profile: GoogleProfile) => string | null
+  /** Login/registrasi dengan profil terverifikasi dari Google Sign-In.
+      Bila `credential` (ID token GIS) disertakan, token itu ditukar dengan
+      JWT backend (POST /auth/google) supaya kiriman saat login tercatat
+      user_id-nya dan tampil di riwayat server. */
+  loginWithGoogle: (profile: GoogleProfile, credential?: string) => string | null
   logout: () => void
   /**
    * Ubah profil sendiri: foto, bio (maks. 160 karakter), username & email
@@ -250,6 +262,78 @@ const apiCall = async (path: string, options: RequestInit = {}) => {
     })
   } catch {
     return null
+  }
+}
+
+/** Simpan JWT backend ke sessionStorage — dipakai semua apiCall
+    berikutnya (termasuk submit publik, supaya kiriman tercatat
+    user_id-nya). Sesi ini hanya hidup selama tab terbuka: pagehide
+    menghapus fa_token (lihat di bawah). */
+const storeBackendToken = (accessToken: unknown): boolean => {
+  if (typeof accessToken !== 'string' || !accessToken) return false
+  try {
+    sessionStorage.setItem('fa_token', accessToken)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Tukar kredensial akun dengan JWT backend. Best-effort dan tidak
+ * memblokir: backend yang tidak terjangkau, atau akun yang belum ada di
+ * backend, tidak mengganggu login lokal — aplikasi tetap jalan penuh
+ * dengan data lokal, hanya riwayat server yang tidak tersedia.
+ */
+const backendLoginPassword = async (id: string, password: string): Promise<boolean> => {
+  try {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, password }),
+    })
+    if (!res.ok) return false
+    const data = await res.json().catch(() => null)
+    return storeBackendToken(data?.access_token)
+  } catch {
+    return false
+  }
+}
+
+/** Tukar ID token Google (GIS) dengan JWT backend (POST /auth/google). */
+const backendLoginGoogle = async (credential: string): Promise<boolean> => {
+  try {
+    const res = await fetch(`${API_BASE}/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential }),
+    })
+    if (!res.ok) return false
+    const data = await res.json().catch(() => null)
+    return storeBackendToken(data?.access_token)
+  } catch {
+    return false
+  }
+}
+
+/** Buatkan akun yang sama di backend (lalu login) supaya akun baru juga
+    punya riwayat server. Best-effort seperti backendLoginPassword. */
+const backendRegister = async (u: { username: string; email: string; password: string; verificationToken?: string }): Promise<boolean> => {
+  try {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: u.username,
+        email: u.email,
+        password: u.password,
+        ...(u.verificationToken ? { verification_token: u.verificationToken } : {}),
+      }),
+    })
+    if (!res.ok) return false
+    return backendLoginPassword(u.email, u.password)
+  } catch {
+    return false
   }
 }
 
@@ -508,15 +592,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const u = { id: uid(), username, email, role: 'User' as Role, password, provider: 'password' as AuthProvider }
         setUsers((p) => [...p, u])
         startSession(u)
+        // Buatkan akun yang sama di backend (best-effort) supaya riwayat
+        // server tersedia untuk akun ini — lihat backendRegister.
+        void backendRegister({ username, email, password, verificationToken })
         return null
       },
       login: (id, password) => {
         const u = users.find((x) => (x.email === id || x.username === id) && (x as never as { password: string }).password === password)
         if (!u) return 'Email/username atau password salah.'
         startSession(u)
+        // Tukar kredensial dengan JWT backend (best-effort): tanpa ini,
+        // kiriman tidak tercatat user_id-nya dan riwayat server kosong.
+        void backendLoginPassword(id, password)
         return null
       },
-      loginWithGoogle: (profile) => {
+      loginWithGoogle: (profile, credential) => {
         if (!profile.email || !profile.googleId) return 'Profil Google tidak lengkap (email tidak tersedia).'
         if (!profile.emailVerified) return 'Email Google Anda belum terverifikasi.'
         const existing = users.find((u) => u.googleId === profile.googleId || u.email.toLowerCase() === profile.email.toLowerCase())
@@ -525,6 +615,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const linked: User = { ...existing, provider: 'google', googleId: profile.googleId, avatar: existing.avatar ?? profile.picture }
           setUsers((p) => p.map((u) => (u.id === existing.id ? { ...u, provider: 'google', googleId: profile.googleId, avatar: u.avatar ?? profile.picture } : u)))
           startSession(linked)
+          if (credential) void backendLoginGoogle(credential)
           return null
         }
         const username = usernameFromEmail(profile.email, (c) => users.some((u) => u.username.toLowerCase() === c.toLowerCase()))
@@ -533,10 +624,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const u = { id: uid(), username, email: profile.email, role: 'User' as Role, password: `google:${uid()}${uid()}${uid()}`, provider: 'google' as AuthProvider, googleId: profile.googleId, avatar: profile.picture }
         setUsers((p) => [...p, u])
         startSession(u)
+        if (credential) void backendLoginGoogle(credential)
         return null
       },
       logout: () => {
         disableGoogleAutoSelect()
+        try {
+          sessionStorage.removeItem('fa_token')
+        } catch {
+          // Penyimpanan tidak tersedia — tidak ada token yang perlu dihapus.
+        }
         setSessionHistory((prev) => ({ ...prev, lastLogoutAt: nowIso() }))
         setSession(null)
         setSessionId(null)

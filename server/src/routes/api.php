@@ -30,6 +30,10 @@ function registerApiRoutes(Router $router): void {
         // --------------------------------------------------------------------------
         $router->post("{$p}/auth/register", [AuthController::class, 'register']);
         $router->post("{$p}/auth/login", [AuthController::class, 'login']);
+        // Login akun Google: tukar ID token GIS dengan JWT backend — dipakai
+        // supaya kiriman saat login (submit publik) tercatat user_id-nya dan
+        // tampil di GET /responses/mine dari perangkat mana pun.
+        $router->post("{$p}/auth/google", [AuthController::class, 'googleLogin']);
         $router->post("{$p}/auth/logout", [AuthController::class, 'logout']);
         // Verifikasi email pendaftaran — kode 5 digit dari forafagroup@gmail.com.
         $router->post("{$p}/auth/email-otp/send", [EmailOtpController::class, 'send']);

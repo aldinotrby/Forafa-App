@@ -217,24 +217,29 @@ function verifyDemo(demo: DemoSession, code: string): OtpVerifyResult {
  * dashboard pengisi (`#/riwayat`) untuk menampilkan riwayat semua link yang
  * pernah diisi identitas itu. Identitas ditambahkan otomatis setiap kali
  * voter terverifikasi di link mana pun (Google / WhatsApp).
- * Data contoh di bawah cocok dengan respons seed (Wati & Slamet) supaya
- * dashboard langsung menampilkan riwayat saat pertama dibuka.
+ *
+ * TIDAK ada identitas demo/seed: dashboard kosong sampai pengisi benar-benar
+ * verifikasi di sebuah link. Kunci demo lama (bila pernah tersimpan di
+ * perangkat ini dari versi sebelumnya) dibuang saat dibaca, supaya nomor
+ * demo & akun Google demo tidak muncul lagi di riwayat.
  */
 const IDENTITY_KEY = 'fa_voter_identities'
-const SEED_IDENTITIES: VerifiedVoter[] = [
-  { method: 'whatsapp', key: 'wa:628123456789', label: '+62 812-****-789', verifiedAt: '2026-11-18T03:00:00.000Z', slug: 'pemilu-pengurus-rw05' },
-  { method: 'google', key: 'google:110012345678901234567', label: 's***@gmail.com', verifiedAt: '2026-11-18T02:00:00.000Z', slug: 'pemilu-pengurus-rw05' },
-]
+const DEMO_IDENTITY_KEYS = new Set([
+  'wa:628123456789',
+  'google:110012345678901234567',
+])
 
 export function loadIdentities(): VerifiedVoter[] {
   try {
     const raw = localStorage.getItem(IDENTITY_KEY)
-    if (raw === null) {
-      localStorage.setItem(IDENTITY_KEY, JSON.stringify(SEED_IDENTITIES))
-      return [...SEED_IDENTITIES]
-    }
+    if (raw === null) return []
     const list = JSON.parse(raw) as VerifiedVoter[]
-    return Array.isArray(list) ? list : []
+    if (!Array.isArray(list)) return []
+    const cleaned = list.filter((v) => v && !DEMO_IDENTITY_KEYS.has(v.key))
+    if (cleaned.length !== list.length) {
+      localStorage.setItem(IDENTITY_KEY, JSON.stringify(cleaned))
+    }
+    return cleaned
   } catch {
     return []
   }

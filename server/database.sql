@@ -11,6 +11,7 @@ USE `forafa_db`;
 -- ------------------------------------------------------------------------------
 -- Table Cleanup
 -- ------------------------------------------------------------------------------
+SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS `voting_answers`;
 DROP TABLE IF EXISTS `voting_questions`;
 DROP TABLE IF EXISTS `response_identities`;
@@ -18,6 +19,7 @@ DROP TABLE IF EXISTS `responses`;
 DROP TABLE IF EXISTS `interactions`;
 DROP TABLE IF EXISTS `sessions`;
 DROP TABLE IF EXISTS `users`;
+SET FOREIGN_KEY_CHECKS = 1;
 
 -- ------------------------------------------------------------------------------
 -- 1. Table: users

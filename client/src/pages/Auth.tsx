@@ -126,6 +126,12 @@ export default function Auth() {
               {mode === 'login' ? 'Daftar sekarang' : 'Login'}
             </button>
           </p>
+
+          <div className="rounded-lg border border-line bg-white px-3 py-3 text-center">
+            <p className="text-sm font-semibold">Masuk sebagai pengisi link?</p>
+            <p className="mt-0.5 text-xs text-mute">Lihat riwayat voting, kritik &amp; saran, dan balasan dari pembuat link — masuk dengan Google atau nomor WhatsApp OTP.</p>
+            <Btn type="button" variant="ghost" className="mt-2 w-full" onClick={() => { location.hash = '#/riwayat' }}>Masuk ke Dashboard Pengisi →</Btn>
+          </div>
           {mode === 'login' && (
             <p className="rounded-lg bg-brand-soft px-3 py-2 text-xs text-brand">
               Demo User: <b>rina</b> / rina12345 &nbsp;·&nbsp; Admin: <b>admin</b> / admin12345

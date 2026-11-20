@@ -3,6 +3,7 @@ import { useStore, type Interaction, type Response } from '../services/store'
 import { loadIdentities, removeIdentity, type VerifiedVoter } from '../services/otpService'
 import { loadSeenReplyIds, markRepliesSeen, markReplySeen } from '../services/replyNotifications'
 import { Btn, Card, KindBadge, Logo, StatusPill, fmtDate } from '../components/ui'
+import VoterLogin from './VoterLogin'
 
 /**
  * Dashboard pengisi link (`#/riwayat`): profil, riwayat voting, riwayat
@@ -10,14 +11,18 @@ import { Btn, Card, KindBadge, Logo, StatusPill, fmtDate } from '../components/u
  * serta status & detail balasan dari pembuat link — untuk identitas
  * terverifikasi (Google / WhatsApp) yang tersimpan di perangkat ini.
  *
- * Identitas HANYA ditambahkan saat pengisi verifikasi di awal pengisian
- * sebuah link (Google / WhatsApp OTP di halaman publik). Tidak ada data
- * demo dan tidak ada tombol tambah akun di dashboard ini.
+ * Identitas ditambahkan saat pengisi verifikasi di awal pengisian sebuah
+ * link (Google / WhatsApp OTP di halaman publik), atau lewat layar login
+ * di dashboard ini sendiri (`VoterLogin`) — masuk dengan identitas yang
+ * sudah ada, atau daftar sebagai pengisi baru. Tidak ada data demo.
  *
  * Riwayat dihitung dari data lokal di perangkat & browser ini saja
  * (localStorage): setiap kiriman — voting, kritik & saran, maupun pesan
  * anonim — selalu membawa `voterKey` identitas terverifikasi pengirimnya,
- * sehingga balasan pemilik link atas kiriman itu muncul di sini.
+ * sehingga balasan pemilik link atas kiriman itu muncul di sini. Saat
+ * pengisi masuk lewat layar login, kiriman lama di perangkat ini yang
+ * memakai `voterKey` yang sama langsung ikut tampil — riwayat tidak
+ * mulai dari 0 bila ia sudah pernah mengisi link sebelumnya.
  */
 export default function VoterDashboard() {
   const { interactions, responses } = useStore()
@@ -26,6 +31,19 @@ export default function VoterDashboard() {
   const [openReplyId, setOpenReplyId] = useState<string | null>(null)
   /** Id respons yang balasannya sudah dibaca (notifikasi balasan). */
   const [seenIds, setSeenIds] = useState<string[]>(() => loadSeenReplyIds())
+  /** Tampilkan layar login untuk menambah identitas lain. */
+  const [showLogin, setShowLogin] = useState(false)
+  /** Info login terakhir — dipakai banner "riwayat ditemukan". */
+  const [justLoggedIn, setJustLoggedIn] = useState<{ label: string; count: number } | null>(null)
+
+  /** Identitas sudah disimpan oleh VoterLogin; muat ulang, pilih, dan
+      hitung berapa kiriman lama yang ikut tampil untuk identitas itu. */
+  const handleLoggedIn = (v: VerifiedVoter) => {
+    setIdentities(loadIdentities())
+    setSelectedKey(v.key)
+    setJustLoggedIn({ label: v.label, count: responses.filter((r) => r.voterKey === v.key).length })
+    setShowLogin(false)
+  }
 
   const selected = identities.find((v) => v.key === selectedKey) ?? identities[0] ?? null
 
@@ -81,18 +99,24 @@ export default function VoterDashboard() {
           <p className="mt-1 text-sm text-mute">Voting, kritik &amp; saran, dan balasan dari pembuat link — untuk identitas terverifikasi Anda.</p>
         </header>
 
-        {identities.length === 0 || !selected ? (
-          <Card className="space-y-4 p-6 text-center">
-            <h2 className="font-display text-xl font-bold">Belum ada identitas terverifikasi</h2>
-            <p className="mx-auto max-w-md text-sm text-mute">
-              Buka sebuah link voting, kritik &amp; saran, atau pesan anonim, lalu verifikasi dengan akun Google atau
-              WhatsApp OTP di awal sebelum mengisi. Setelah itu identitas Anda tersimpan di perangkat ini beserta
-              riwayat dan balasannya, dan muncul di dashboard ini.
-            </p>
-            <p><a href="#/" className="text-sm font-semibold text-brand hover:underline">← Kembali ke beranda</a></p>
-          </Card>
+        {showLogin || identities.length === 0 || !selected ? (
+          <VoterLogin onLoggedIn={handleLoggedIn} onCancel={identities.length > 0 ? () => setShowLogin(false) : undefined} />
         ) : (
           <>
+            {/* Banner riwayat yang ikut tampil setelah masuk */}
+            {justLoggedIn && (
+              <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4" role="status">
+                <span className="text-xl" aria-hidden>✓</span>
+                <p className="min-w-0 flex-1 text-sm leading-relaxed text-emerald-900">
+                  Masuk sebagai <b>{justLoggedIn.label}</b>.{' '}
+                  {justLoggedIn.count > 0
+                    ? <>Ditemukan <b>{justLoggedIn.count} kiriman sebelumnya</b> dengan identitas ini di perangkat ini — riwayat Anda tampil di bawah.</>
+                    : <>Belum ada kiriman tercatat dengan identitas ini di perangkat ini — kiriman berikutnya yang terverifikasi akan muncul di sini.</>}
+                </p>
+                <Btn variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setJustLoggedIn(null)}>Tutup</Btn>
+              </div>
+            )}
+
             {/* Pilihan identitas */}
             <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Pilih identitas">
               {identities.map((v) => (
@@ -107,6 +131,13 @@ export default function VoterDashboard() {
                   {v.method === 'google' ? 'G ' : '💬 '} {v.label}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => { setJustLoggedIn(null); setShowLogin(true) }}
+                className="rounded-full border border-dashed border-line bg-white px-3 py-1.5 text-xs font-semibold text-brand transition-colors hover:bg-brand-soft"
+              >
+                ＋ Tambah identitas
+              </button>
             </div>
 
             {/* Notifikasi balasan baru dari pembuat link */}

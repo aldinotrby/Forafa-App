@@ -418,6 +418,27 @@ function load<T>(key: string, fallback: T, storage: Storage = localStorage): T {
   }
 }
 
+/**
+ * Jenis navigasi pemuatan halaman ini (Navigation Timing API, dengan
+ * fallback ke `performance.navigation` lama): `'reload'` bila pengguna
+ * memuat ulang halaman (refresh), `'navigate'` untuk pemuatan baru
+ * (tab baru/duplikat, ketik URL, datang dari situs lain), dan
+ * `'back_forward'` untuk tombol Back/forward. Bila API tidak tersedia,
+ * dianggap navigasi baru supaya sesi tetap berakhir (perilaku lama).
+ */
+function navigationType(): string {
+  try {
+    const entries = performance.getEntriesByType?.('navigation') as PerformanceNavigationTiming[] | undefined
+    if (entries && entries.length > 0 && entries[0].type) return entries[0].type
+    const legacy = (performance as unknown as { navigation?: { type?: number } }).navigation
+    if (legacy && legacy.type === 1) return 'reload'
+    if (legacy && typeof legacy.type === 'number') return 'navigate'
+  } catch {
+    // API tidak tersedia — diperlakukan sebagai navigasi baru di bawah.
+  }
+  return 'navigate'
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>(() => load('fa_users', seedUsers))
   const [sessionId, setSessionId] = useState<string | null>(() => load('fa_session', null, sessionStorage))
@@ -429,10 +450,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const tabInitRef = useRef(false)
 
   useEffect(() => localStorage.setItem('fa_users', JSON.stringify(users)), [users])
-  // Sesi disimpan di sessionStorage dan diakhiri begitu halaman
-  // ditinggalkan (lihat penanganan pagehide/pageshow di bawah): menutup
-  // tab, memuat ulang halaman, atau pindah ke situs lain berarti sesi
-  // berakhir dan pengguna harus login kembali.
+  // Sesi disimpan di sessionStorage. Memuat ulang halaman (refresh)
+  // TIDAK mengakhiri sesi — sesi dipulihkan dari sessionStorage saat
+  // halaman dimuat lagi (lihat kondisi tab di bawah). Yang mengakhiri
+  // sesi: menutup tab (sessionStorage ikut terhapus), pindah ke situs
+  // lain lalu kembali lewat navigasi baru, tab duplikat, dan tombol
+  // Back/forward (lihat penanganan pageshow).
   useEffect(() => sessionStorage.setItem('fa_session', JSON.stringify(sessionId)), [sessionId])
   useEffect(() => {
     if (session) sessionStorage.setItem('fa_session_info', JSON.stringify(session))
@@ -454,17 +477,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => localStorage.setItem('fa_resp', JSON.stringify(responses)), [responses])
 
   // --- Kondisi akun saat tab dibuka / ditutup ---------------------------------
-  // Sesi hanya hidup selama halaman ini terbuka (lihat pagehide/pageshow
-  // di bawah): menutup tab, memuat ulang halaman, atau meninggalkan
-  // aplikasi mengakhiri sesi, dan membuka aplikasi lagi berarti harus
-  // login kembali. Blok ini hanya menyegarkan stempel waktu bila masih
-  // ada sesi yang terbaca di tab ini (mis. tab duplikat yang menyalin
-  // sessionStorage, atau sesi yang dipulihkan browser setelah crash),
-  // dan membuatkan info sesi bila ID sesi ada tetapi info sesinya
-  // belum ada.
+  // Memuat ulang halaman (refresh) TIDAK mengakhiri sesi: pemuatan dengan
+  // jenis navigasi 'reload' memulihkan sesi dari sessionStorage (hanya
+  // stempel waktunya disegarkan, seperti dulu). Sebaliknya, pemuatan baru
+  // — tab baru/duplikat, ketik URL, datang dari situs lain, atau tombol
+  // Back/forward — mengakhiri sesi: kunci sesi dihapus dan pengguna harus
+  // login kembali. Blok ini hanya berjalan sekali saat provider dipasang
+  // (tab dibuka / halaman dimuat), dan membuatkan info sesi bila ID sesi
+  // ada tetapi info sesinya belum ada.
   useEffect(() => {
     if (tabInitRef.current) return
     tabInitRef.current = true
+    if (navigationType() !== 'reload' && sessionId) {
+      // Bukan refresh: sesi dari pemuatan sebelumnya sudah berakhir.
+      try {
+        sessionStorage.removeItem('fa_session')
+        sessionStorage.removeItem('fa_session_info')
+        sessionStorage.removeItem('fa_token')
+      } catch {
+        // Penyimpanan tidak tersedia — tidak ada sesi yang perlu diakhiri.
+      }
+      disableGoogleAutoSelect()
+      setSessionId(null)
+      setSession(null)
+      return
+    }
     const openedAt = nowIso()
     setSession((prev) => {
       if (!sessionId) return prev
@@ -482,12 +519,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Tab terlihat / disembunyikan, jendela fokus / tidak fokus → presence + lastSeen.
   // Halaman dibongkar (pagehide/beforeunload: tab ditutup, halaman dimuat
   // ulang, atau pindah ke situs lain) → catat waktu tutupnya ke localStorage
-  // secara sinkron, lalu AKHIRI SESI saat itu juga dengan menghapus kunci
-  // sesi dari sessionStorage — membuka aplikasi lagi selalu mulai dari
-  // halaman login. Pengecualian: bila halaman hanya masuk back-forward
-  // cache (pagehide dengan persisted=true), penghapusan ditunda sampai
-  // halaman dipulihkan lagi (lihat onPageShow), karena halaman yang sama
-  // akan hidup kembali.
+  // secara sinkron. Sesi TIDAK dihapus di sini: kunci sesi dibiarkan di
+  // sessionStorage, dan pemuatan berikutnya yang memutuskan — refresh
+  // ('reload') memulihkan sesi, pemuatan baru mengakhirinya (lihat kondisi
+  // tab di atas). Menutup tab tetap mengakhiri sesi karena browser
+  // menghapus sessionStorage tab itu. Pengecualian: bila halaman hanya
+  // masuk back-forward cache (pagehide dengan persisted=true), penghapusan
+  // ditunda sampai halaman dipulihkan lagi (lihat onPageShow), karena
+  // halaman yang sama akan hidup kembali.
   useEffect(() => {
     const markSeen = (p: Presence) => {
       setPresence(p)
@@ -518,7 +557,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       } catch {
         // Penyimpanan tidak tersedia — kondisi tab tidak tercatat.
       }
-      if (!persisted) endSessionNow()
+      // Kunci sesi sengaja dibiarkan di sessionStorage (lihat komentar di
+      // atas): pemuatan berikutnya yang memutuskan berdasarkan jenis
+      // navigasinya — refresh memulihkan sesi, pemuatan baru mengakhirinya.
       setSessionHistory((prev) => ({ ...prev, lastTabClosedAt: closedAt }))
     }
     const onPageShow = (e: Event) => {

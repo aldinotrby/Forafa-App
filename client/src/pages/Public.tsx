@@ -393,7 +393,7 @@ export default function Public({ slug }: { slug: string }) {
                   <p className="min-w-0 flex-1 text-sm leading-relaxed text-amber-900">
                     <b>Ada {myUnseenReplies.length} balasan baru</b> dari pembuat link untuk masukan Anda di link ini.
                   </p>
-                  <a href="#/riwayat" className="text-sm font-semibold text-brand hover:underline">Lihat balasan</a>
+                  <a href={`#/balasan/${myUnseenReplies[0].id}`} className="text-sm font-semibold text-brand hover:underline">Lihat balasan</a>
                   <Btn type="button" variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setSeenIds(markRepliesSeen(myUnseenReplies.map((r) => r.id)))}>Tandai sudah dibaca</Btn>
                 </div>
               )}

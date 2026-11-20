@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { StoreProvider, useStore } from './services/store'
 import Auth from './pages/Auth'
 import Public from './pages/Public'
+import ReplyDetailPage from './pages/ReplyDetailPage'
 import VoterDashboard from './pages/VoterDashboard'
 import Workspace from './Workspace'
 
@@ -15,6 +16,8 @@ function Router() {
   }, [])
   const m = hash.match(/^#\/p\/([^/]+)/)
   if (m) return <Public slug={m[1]} />
+  const rb = hash.match(/^#\/balasan\/([^/]+)/)
+  if (rb) return <ReplyDetailPage responseId={decodeURIComponent(rb[1])} />
   if (hash === '#/riwayat' || hash.startsWith('#/riwayat')) return <VoterDashboard />
   return user ? <Workspace /> : <Auth />
 }

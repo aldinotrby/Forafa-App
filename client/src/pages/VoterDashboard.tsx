@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useStore, type Kind, type Response } from '../services/store'
 import { fetchMyResponses, mergeHistories, type ServerResponseItem } from '../services/myResponses'
 import { loadIdentities, removeIdentity, type VerifiedVoter } from '../services/otpService'
-import { loadSeenReplyIds, markRepliesSeen, markReplySeen } from '../services/replyNotifications'
+import { loadSeenReplyIds, markRepliesSeen } from '../services/replyNotifications'
 import { Btn, Card, KindBadge, Logo, StatusPill, fmtDate } from '../components/ui'
 import VoterLogin from './VoterLogin'
 
@@ -33,6 +33,10 @@ import VoterLogin from './VoterLogin'
  * sama; akun email → pilihan "Akun Forafa" sendiri) dan ditandai lencana
  * "Server". Bila server tidak terjangkau, dashboard tetap menampilkan
  * riwayat lokal.
+ *
+ * Detail balasan tidak lagi dibuka inline di sini: tombol "Lihat detail
+ * balasan" membuka halaman khusus (`#/balasan/:id`, `ReplyDetailPage`)
+ * yang menampilkan kiriman beserta balasannya tanpa layar login.
  */
 
 /** Identitas yang bisa dipilih: identitas voter (Google) atau akun
@@ -60,7 +64,6 @@ export default function VoterDashboard() {
   const { user, session, logout, interactions, responses } = useStore()
   const [identities, setIdentities] = useState<VerifiedVoter[]>(() => loadIdentities())
   const [selectedKey, setSelectedKey] = useState<string>(() => loadIdentities()[0]?.key ?? '')
-  const [openReplyId, setOpenReplyId] = useState<string | null>(null)
   /** Id respons yang balasannya sudah dibaca (notifikasi balasan). */
   const [seenIds, setSeenIds] = useState<string[]>(() => loadSeenReplyIds())
   /** Tampilkan layar login untuk menambah identitas lain. */
@@ -192,7 +195,7 @@ export default function VoterDashboard() {
       ? responses
       : responses.filter((r) => r.voterKey === selected.key)
     : []
-  const merged = serverApplies && serverResponses ? mergeHistories(baseLocal, serverResponses) : [...baseLocal]
+  const merged = serverResponses ? mergeHistories(baseLocal, serverResponses) : [...baseLocal]
   /** Tampilan akun hanya berisi kiriman server (yang cocok dengan lokal
       sudah digabung menjadi versi server); tampilan voter berisi kiriman
       lokalnya ditambah kiriman server yang tidak punya padanan lokal. */
@@ -335,9 +338,9 @@ export default function VoterDashboard() {
               <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4" role="status">
                 <span className="text-xl" aria-hidden>🔔</span>
                 <p className="min-w-0 flex-1 text-sm leading-relaxed text-amber-900">
-                  <b>Ada {unseen.length} balasan baru dari pembuat link</b> untuk kritik &amp; saran dan pesan anonim Anda. Buka detail balasan di bawah untuk membacanya.
+                  <b>Ada {unseen.length} balasan baru dari pembuat link</b> untuk kritik &amp; saran dan pesan anonim Anda. Buka halaman balasan untuk membacanya.
                 </p>
-                <a href="#kritik-saran" className="text-sm font-semibold text-brand hover:underline">Lihat balasan</a>
+                <a href={`#/balasan/${unseen[0].id}`} className="text-sm font-semibold text-brand hover:underline">Lihat balasan</a>
                 <Btn variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setSeenIds(markRepliesSeen(unseen.map((r) => r.id)))}>Tandai sudah dibaca</Btn>
               </div>
             )}
@@ -433,6 +436,9 @@ export default function VoterDashboard() {
                           <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-700">Server</span>
                         )}
                         <StatusPill s={r.status} />
+                        {r.reply && (
+                          <a href={`#/balasan/${r.id}`} className="shrink-0 text-xs font-semibold text-brand hover:underline">Lihat balasan</a>
+                        )}
                         {it?.slug ? (
                           <a href={`#/p/${it.slug}`} className="shrink-0 text-xs font-semibold text-brand hover:underline">Lihat link</a>
                         ) : null}
@@ -451,12 +457,7 @@ export default function VoterDashboard() {
               empty="Belum ada kritik & saran dari identitas ini. Isi kritik & saran lewat linknya — verifikasi Google di awal — agar tercatat di sini beserta balasannya."
               items={feedbackResponses}
               findInteraction={resolveInteraction}
-              openReplyId={openReplyId}
               seenIds={seenIds}
-              onToggleReply={(r, open) => {
-                if (!open && r.reply) setSeenIds(markReplySeen(r.id))
-                setOpenReplyId(open ? null : r.id)
-              }}
             />
 
             {/* Riwayat pesan anonim + status & detail balasan */}
@@ -466,12 +467,7 @@ export default function VoterDashboard() {
               empty="Belum ada pesan anonim dari identitas ini. Isi pesan anonim lewat linknya — verifikasi Google di awal — agar tercatat di sini beserta balasannya. Pemilik link tetap melihat kiriman Anda sebagai “Anonim”."
               items={anonResponses}
               findInteraction={resolveInteraction}
-              openReplyId={openReplyId}
               seenIds={seenIds}
-              onToggleReply={(r, open) => {
-                if (!open && r.reply) setSeenIds(markReplySeen(r.id))
-                setOpenReplyId(open ? null : r.id)
-              }}
             />
 
             <p className="text-center text-xs text-mute">
@@ -488,16 +484,15 @@ export default function VoterDashboard() {
 }
 
 /** Satu daftar riwayat masukan (kritik & saran, atau pesan anonim):
-    status, lencana balasan baru, dan detail balasan pemilik link. */
-function HistorySection({ id, title, empty, items, findInteraction, openReplyId, seenIds, onToggleReply }: {
+    status, lencana balasan baru, dan tautan ke halaman khusus balasan
+    (`#/balasan/:id`) — detail balasan tidak dibuka inline di sini. */
+function HistorySection({ id, title, empty, items, findInteraction, seenIds }: {
   id: string
   title: string
   empty: string
   items: Response[]
   findInteraction: (r: Response) => ResolvedInteraction | undefined
-  openReplyId: string | null
   seenIds: string[]
-  onToggleReply: (r: Response, open: boolean) => void
 }) {
   return (
     <section className="space-y-3" id={id}>
@@ -508,7 +503,6 @@ function HistorySection({ id, title, empty, items, findInteraction, openReplyId,
         <div className="space-y-3">
           {items.map((r) => {
             const it = findInteraction(r)
-            const open = openReplyId === r.id
             return (
               <Card key={r.id} className="p-5">
                 <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -528,43 +522,15 @@ function HistorySection({ id, title, empty, items, findInteraction, openReplyId,
                   <span className={`font-semibold ${r.reply ? 'text-emerald-700' : 'text-mute'}`}>
                     {r.reply ? '✓ Sudah dibalas pembuat link' : '○ Belum ada balasan'}
                   </span>
-                  <button
-                    className="font-semibold text-brand hover:underline"
-                    onClick={() => onToggleReply(r, open)}
-                  >
-                    {open ? 'Tutup detail ↑' : 'Lihat detail balasan ↓'}
-                  </button>
+                  <a href={`#/balasan/${r.id}`} className="font-semibold text-brand hover:underline">
+                    {r.reply ? 'Lihat detail balasan →' : 'Lihat detail →'}
+                  </a>
                 </div>
-                {open && <ReplyDetail r={r} />}
               </Card>
             )
           })}
         </div>
       )}
     </section>
-  )
-}
-
-/** Detail balasan pesan: pesan lengkap, balasan pemilik, dan statusnya. */
-function ReplyDetail({ r }: { r: Response }) {
-  return (
-    <div className="mt-4 space-y-3 rounded-xl border border-line bg-ground/60 p-4 text-sm">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-mute">Pesan Anda</p>
-        <p className="mt-1 whitespace-pre-wrap leading-relaxed">{r.message}</p>
-      </div>
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-mute">Balasan pembuat link</p>
-        {r.reply ? (
-          <p className="mt-1 whitespace-pre-wrap rounded-lg bg-white p-3 leading-relaxed">{r.reply}</p>
-        ) : (
-          <p className="mt-1 text-mute">Belum ada balasan. Pembuat link akan membalas setelah membaca pesan Anda.</p>
-        )}
-      </div>
-      <p className="flex items-center gap-2 text-xs text-mute">
-        Status balasan: <StatusPill s={r.status} />
-        <span>Dikirim {fmtDate(r.at)}</span>
-      </p>
-    </div>
   )
 }

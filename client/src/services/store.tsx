@@ -93,14 +93,15 @@ export interface Response {
    */
   anonymous?: boolean
   /**
-   * Identitas terverifikasi pengirim voting (1 akun/nomor = 1 suara):
-   * `google:<sub>` atau `wa:<nomor62>`. Dipakai untuk menampilkan pesan
+   * Identitas terverifikasi pengirim voting (1 akun = 1 suara):
+   * `google:<sub>` (atau `wa:<nomor62>` untuk data lama dari sebelum
+   * metode OTP WhatsApp dihapus). Dipakai untuk menampilkan pesan
    * "sudah pernah voting" bila identitas yang sama mengisi lagi.
    */
   voterKey?: string
-  /** Cara voter terverifikasi: Google atau OTP WhatsApp. */
+  /** Cara voter terverifikasi: Google (atau 'whatsapp' untuk data lama). */
   verifiedVia?: 'google' | 'whatsapp'
-  /** Label tampil identitas terverifikasi (email / nomor tersamarkan). */
+  /** Label tampil identitas terverifikasi (email / nomor tersamarkan untuk data lama). */
   verificationLabel?: string
 }
 
@@ -129,8 +130,7 @@ interface Store {
   addInteraction: (i: Omit<Interaction, 'id' | 'ownerId' | 'slug' | 'createdAt'>, ownerIdOverride?: string) => Interaction
   updateInteraction: (id: string, patch: Partial<Interaction>) => void
   removeInteraction: (id: string) => void
-  /** verificationToken (OTP WhatsApp, 15 menit) ikut terkirim ke backend tapi TIDAK disimpan lokal. */
-  submit: (r: Omit<Response, 'id' | 'at' | 'status'> & { verificationToken?: string }) => void
+  submit: (r: Omit<Response, 'id' | 'at' | 'status'>) => void
   patchResponse: (id: string, patch: Partial<Response>) => void
   removeResponse: (id: string) => void
 }
@@ -605,8 +605,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         apiCall(`/interactions/${id}`, { method: 'DELETE' })
       },
       submit: (r) => {
-        const { verificationToken, ...rest } = r
-        const n: Response = { ...rest, id: uid(), status: 'Baru', at: new Date().toISOString() }
+        const n: Response = { ...r, id: uid(), status: 'Baru', at: new Date().toISOString() }
         setResponses((p) => [n, ...p])
 
         // Asynchronously submit through backend public portal
@@ -615,12 +614,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           apiCall(`/public/${targetInter.slug}/submit`, {
             method: 'POST',
             body: JSON.stringify({
-              name: rest.name,
-              choice: rest.choice,
-              choices: rest.choices,
-              message: rest.message,
-              verification: rest.voterKey
-                ? { type: rest.verifiedVia, identifier: rest.voterKey, token: verificationToken }
+              name: r.name,
+              choice: r.choice,
+              choices: r.choices,
+              message: r.message,
+              verification: r.voterKey
+                ? { type: r.verifiedVia, identifier: r.voterKey }
                 : undefined,
             }),
           })

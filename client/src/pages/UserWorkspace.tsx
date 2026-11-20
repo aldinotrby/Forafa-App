@@ -789,9 +789,9 @@ function Flow() {
       <Card className="p-6">
         <h2 className="font-display text-lg font-bold">Alur pengunjung (tanpa akun)</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl bg-vote-soft p-4 text-sm"><b className="text-vote">Voting</b><p className="mt-1">Buka link → verifikasi Google / WhatsApp OTP di awal → jawab tiap pertanyaan (Ketua, Wakil, …) — bila ragu, pakai "Bantuan memilih voting yang tepat" → kirim vote</p></div>
-          <div className="rounded-xl bg-fb-soft p-4 text-sm"><b className="text-fb">Kritik &amp; Saran</b><p className="mt-1">Buka link → verifikasi Google / WhatsApp OTP di awal → isi nama → tulis masukan → kirim, lalu pantau status &amp; balasan di Riwayat Saya</p></div>
-          <div className="rounded-xl bg-anon-soft p-4 text-sm"><b className="text-anon">Anonim</b><p className="mt-1">Buka link → verifikasi Google / WhatsApp OTP di awal → tulis pesan → kirim (tetap tampil sebagai Anonim ke pemilik link) → pantau status &amp; balasan di Riwayat Saya</p></div>
+          <div className="rounded-xl bg-vote-soft p-4 text-sm"><b className="text-vote">Voting</b><p className="mt-1">Buka link → verifikasi Google di awal → jawab tiap pertanyaan (Ketua, Wakil, …) — bila ragu, pakai "Bantuan memilih voting yang tepat" → kirim vote</p></div>
+          <div className="rounded-xl bg-fb-soft p-4 text-sm"><b className="text-fb">Kritik &amp; Saran</b><p className="mt-1">Buka link → verifikasi Google di awal → isi nama → tulis masukan → kirim, lalu pantau status &amp; balasan di Riwayat Saya</p></div>
+          <div className="rounded-xl bg-anon-soft p-4 text-sm"><b className="text-anon">Anonim</b><p className="mt-1">Buka link → verifikasi Google di awal → tulis pesan → kirim (tetap tampil sebagai Anonim ke pemilik link) → pantau status &amp; balasan di Riwayat Saya</p></div>
         </div>
         <p className="mt-4 text-sm text-mute">
           Status respons: <StatusPill s="Baru" /> → <StatusPill s="Dibaca" /> → <StatusPill s="Diproses" /> → <StatusPill s="Selesai" />

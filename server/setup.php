@@ -36,7 +36,18 @@ try {
     // 2. Connect directly to the database
     $pdo = Database::getConnection(true);
 
-    // 3. Read and execute database.sql
+    // 3. Remove all existing tables before replaying the schema.
+    // This also removes tables left by an earlier schema version that may
+    // reference tables in this script.
+    $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
+    $tables = $pdo->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'")
+        ->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($tables as $table) {
+        $pdo->exec("DROP TABLE IF EXISTS `" . str_replace('`', '``', (string) $table) . "`");
+    }
+    $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
+
+    // 4. Read and execute database.sql
     $sqlFile = __DIR__ . '/database.sql';
     if (!file_exists($sqlFile)) {
         throw new Exception("File database.sql tidak ditemukan!");

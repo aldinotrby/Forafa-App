@@ -34,6 +34,12 @@ class ResponseModel {
                     $db->exec("ALTER TABLE responses ADD COLUMN is_anonymous INTEGER NOT NULL DEFAULT 0");
                 } catch (Throwable $e) {}
             }
+            if (!in_array('user_id', $cols, true)) {
+                try {
+                    $db->exec("ALTER TABLE responses ADD COLUMN user_id VARCHAR(50) NULL");
+                    $db->exec("CREATE INDEX IF NOT EXISTS idx_responses_user_id ON responses(user_id)");
+                } catch (Throwable $e) {}
+            }
         } else {
             $db->exec("CREATE TABLE IF NOT EXISTS `response_identities` (
                 `id` VARCHAR(50) NOT NULL,
@@ -53,6 +59,14 @@ class ResponseModel {
                 $check = $db->query("SHOW COLUMNS FROM `responses` LIKE 'is_anonymous'")->fetch();
                 if (!$check) {
                     $db->exec("ALTER TABLE `responses` ADD COLUMN `is_anonymous` TINYINT(1) NOT NULL DEFAULT 0 AFTER `shared`");
+                }
+            } catch (Throwable $e) {}
+
+            try {
+                $checkUser = $db->query("SHOW COLUMNS FROM `responses` LIKE 'user_id'")->fetch();
+                if (!$checkUser) {
+                    $db->exec("ALTER TABLE `responses` ADD COLUMN `user_id` VARCHAR(50) NULL AFTER `is_anonymous`");
+                    $db->exec("ALTER TABLE `responses` ADD KEY `idx_responses_user_id` (`user_id`)");
                 }
             } catch (Throwable $e) {}
         }
@@ -215,6 +229,41 @@ class ResponseModel {
         return self::attachAnswersToRows($db, $rows);
     }
 
+    /**
+     * Riwayat pengisian milik satu akun pengguna (hanya data milik sendiri).
+     * Identitas yang di-anonimkan tetap tampil sebagai Anonim.
+     */
+    public static function getByUser(PDO $db, string $userId, int $skip = 0, int $limit = 200): array {
+        self::ensureTablesExist($db);
+
+        $stmt = $db->prepare("
+            SELECT r.*, i.title AS interaction_title, i.slug AS interaction_slug, i.kind AS interaction_kind,
+                   ri.name AS identity_name, COALESCE(r.is_anonymous, ri.is_anonymous, 0) AS is_anonymous
+            FROM responses r
+            LEFT JOIN response_identities ri ON ri.response_id = r.id
+            LEFT JOIN interactions i ON i.id = r.interaction_id
+            WHERE r.user_id = :user_id
+            ORDER BY r.created_at DESC
+            LIMIT :limit OFFSET :skip
+        ");
+        $stmt->bindValue(':user_id', $userId);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':skip', $skip, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $rows = self::attachAnswersToRows($db, $rows);
+
+        return array_map(function ($row) {
+            $formatted = self::format($row);
+            $formatted['user_id'] = $row['user_id'] ?? null;
+            $formatted['interaction_title'] = $row['interaction_title'] ?? null;
+            $formatted['interaction_slug'] = $row['interaction_slug'] ?? null;
+            $formatted['interaction_kind'] = $row['interaction_kind'] ?? null;
+            return $formatted;
+        }, $rows);
+    }
+
     public static function getByInteractions(PDO $db, array $interactionIds, int $skip = 0, int $limit = 500): array {
         self::ensureTablesExist($db);
 
@@ -272,8 +321,8 @@ class ResponseModel {
 
         // 1. Simpan data jawaban voting ke tabel `responses`
         $stmtResponse = $db->prepare("
-            INSERT INTO responses (id, interaction_id, name, choice, message, status, reply, shared, is_anonymous, created_at)
-            VALUES (:id, :interaction_id, :name, :choice, :message, :status, :reply, :shared, :is_anonymous, :created_at)
+            INSERT INTO responses (id, interaction_id, name, choice, message, status, reply, shared, is_anonymous, user_id, created_at)
+            VALUES (:id, :interaction_id, :name, :choice, :message, :status, :reply, :shared, :is_anonymous, :user_id, :created_at)
         ");
         $stmtResponse->execute([
             ':id' => $responseId,
@@ -285,6 +334,7 @@ class ResponseModel {
             ':reply' => $data['reply'] ?? null,
             ':shared' => $shared,
             ':is_anonymous' => $isAnonymous,
+            ':user_id' => $data['user_id'] ?? null,
             ':created_at' => $now,
         ]);
 

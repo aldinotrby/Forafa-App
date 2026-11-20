@@ -132,9 +132,13 @@ interface Store {
   logout: () => void
   /**
    * Ubah profil sendiri: foto, bio (maks. 160 karakter), username & email
-   * (masing-masing 1x dalam 7 hari). Mengembalikan pesan error atau null.
+   * (masing-masing 1x dalam 7 hari). Ganti email wajib menyertakan
+   * `emailVerificationToken` — token sekali pakai dari verifikasi kode
+   * OTP 5 digit ke email baru (lihat `emailOtpService`). Tanpa token,
+   * ganti email ditolak; username/bio/foto tidak kena aturan ini.
+   * Mengembalikan pesan error atau null.
    */
-  updateProfile: (patch: { username?: string; email?: string; avatar?: string | null; bio?: string }) => string | null
+  updateProfile: (patch: { username?: string; email?: string; avatar?: string | null; bio?: string; emailVerificationToken?: string }) => string | null
   /**
    * Ganti password akun email (provider 'password'). Akun Google tidak
    * memakai password lokal — kembalikan error untuk akun Google.
@@ -540,7 +544,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateProfile: (patch) => {
         const me = users.find((u) => u.id === sessionId)
         if (!me) return 'Anda belum login.'
-        const { username, email, avatar, bio } = patch
+        const { username, email, avatar, bio, emailVerificationToken } = patch
         const now = Date.now()
         const nextDate = (changedAt?: string | null) =>
           changedAt ? new Date(new Date(changedAt).getTime() + PROFILE_CHANGE_COOLDOWN_MS) : null
@@ -559,6 +563,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (next && now < next.getTime()) {
             return `Email baru bisa diganti lagi pada ${next.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} (1x dalam 7 hari).`
           }
+          // Ganti email wajib membuktikan kepemilikan email baru: token
+          // sekali pakai dari verifikasi kode OTP 5 digit yang dikirim
+          // ke email baru (tanpa kode demo). Tanpa token, email tidak
+          // diganti — username/bio/foto tetap bisa disimpan terpisah.
+          if (!emailVerificationToken) {
+            return 'Ganti email wajib verifikasi: minta kode 5 digit ke email baru Anda dan verifikasi dulu sebelum menyimpan.'
+          }
         }
         if (bio !== undefined && bioLength(bio) > BIO_MAX_LENGTH) return `Bio maksimal ${BIO_MAX_LENGTH} karakter.`
         const applied: Partial<User> = {}
@@ -576,12 +587,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setUsers((p) => p.map((u) => (u.id === me.id ? { ...u, ...applied } : u)))
 
         // Sinkronisasi ke backend (PATCH /users/{id} menegakkan aturan
-        // yang sama: cooldown 7 hari & bio maks. 160 karakter).
+        // yang sama: cooldown 7 hari, bio maks. 160 karakter, dan ganti
+        // email wajib token verifikasi OTP bila SMTP dikonfigurasi).
         apiCall(`/users/${me.id}`, {
           method: 'PATCH',
           body: JSON.stringify({
             ...(applied.username ? { username: applied.username } : {}),
-            ...(applied.email ? { email: applied.email } : {}),
+            ...(applied.email ? { email: applied.email, ...(emailVerificationToken ? { email_verification_token: emailVerificationToken } : {}) } : {}),
             ...(avatar !== undefined ? { avatar: avatar ?? null } : {}),
             ...(bio !== undefined ? { bio: applied.bio ?? null } : {}),
           }),

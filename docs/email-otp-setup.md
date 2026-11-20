@@ -25,6 +25,27 @@ Aturan kode:
 Daftar dengan **Google** tidak memakai kode ini — email Google sudah
 terverifikasi oleh Google sendiri.
 
+## Ganti email di Profil juga wajib verifikasi
+
+Mengganti email dari halaman **Profil** memakai kode yang sama, dikirim
+ke **email baru** (bukan email lama):
+
+1. Buka **Profil** → ketik email baru di kolom Email.
+2. Klik **Kirim kode verifikasi ke email baru** — kode 5 digit dikirim
+   dari `forafagroup@gmail.com` ke email baru itu.
+3. Masukkan kode → klik **Verifikasi & ganti email**.
+4. Selesai — email lama diganti, dan hitung 7 hari berikutnya mulai dari
+   saat ini (email baru hanya bisa diganti lagi 1x dalam 7 hari).
+
+Aturan kodenya sama: berlaku 10 menit, salah maks. 3 kali, kirim ulang
+paling cepat 60 detik. Token verifikasi hanya berlaku untuk email baru
+itu dan hangus setelah dipakai sekali. Tombol **Simpan profil** yang
+biasa tidak bisa mengganti email tanpa verifikasi — bila email diubah
+tanpa kode, penyimpanan ditolak dengan pesan yang menjelaskan langkahnya.
+
+Admin yang mengubah email pengguna lain dari Manajemen Pengguna tidak
+perlu kode ini.
+
 ## Alur untuk pengelola (supaya kodenya benar-benar terkirim)
 
 Pengiriman memakai SMTP Gmail, tanpa library tambahan (implementasi ada di
@@ -147,6 +168,11 @@ Bila gagal, pesan error di layar menjelaskan penyebabnya:
   (mis. CI tanpa mail), pendaftaran tanpa token tetap bisa — tapi frontend
   tidak akan pernah sampai ke sana, karena pengiriman kode sudah gagal
   lebih dulu.
+- `PATCH /api/v1/users/{id}` — ganti email sendiri wajib menyertakan
+  `email_verification_token` dari kode yang dikirim ke email baru itu,
+  bila SMTP sudah dikonfigurasi (tanpa token → 422; token dipakai sekali,
+  lalu hangus). Bila SMTP belum dikonfigurasi, ganti email tanpa token
+  tetap bisa — sama seperti pendaftaran.
 
 ## Catatan keamanan
 
@@ -156,6 +182,9 @@ Bila gagal, pesan error di layar menjelaskan penyebabnya:
   dihanguskan supaya tidak ada kode "hantu" yang tidak pernah sampai.
 - Token verifikasi sekali pakai: setelah dipakai mendaftar, token hangus.
 - Profil: username & email masing-masing hanya bisa diganti 1x dalam
-  7 hari; ganti password akun email wajib memasukkan password lama.
-  Aturan ini ditegakkan di frontend (`client/src/services/profile.ts`,
-  `store.tsx`) dan di backend (`server/src/controllers/UserController.php`).
+  7 hari; ganti email sendiri wajib verifikasi OTP 5 digit ke email baru
+  (token sekali pakai, dihanguskan di backend saat dipakai); ganti
+  password akun email wajib memasukkan password lama. Aturan ini
+  ditegakkan di frontend (`client/src/services/profile.ts`,
+  `store.tsx`, `pages/Profile.tsx`) dan di backend
+  (`server/src/controllers/UserController.php`).

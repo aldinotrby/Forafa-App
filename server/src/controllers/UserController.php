@@ -6,6 +6,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../models/User.php';
+require_once __DIR__ . '/../models/EmailOtp.php';
 require_once __DIR__ . '/../utils/Response.php';
 require_once __DIR__ . '/../middlewares/AuthMiddleware.php';
 require_once __DIR__ . '/../config/database.php';
@@ -118,7 +119,11 @@ class UserController {
      * Profil sendiri: username & email masing-masing hanya bisa diganti
      * 1x dalam 7 hari (dicek dari username_changed_at / email_changed_at);
      * admin yang mengubah akun orang lain tidak kena cooldown. Ganti
-     * password oleh pemilik akun wajib menyertakan password lama
+     * email oleh pemilik akun wajib verifikasi ulang: token sekali pakai
+     * (`email_verification_token`) dari kode OTP 5 digit yang dikirim ke
+     * email baru, bila SMTP dikonfigurasi (tanpa SMTP, pendaftaran pun
+     * tidak bisa jalan lewat frontend, jadi jalur lama tetap dibuka).
+     * Ganti password oleh pemilik akun wajib menyertakan password lama
      * (`current_password`); admin memakai endpoint reset-password.
      */
     public static function update(string $id): void {
@@ -178,6 +183,20 @@ class UserController {
             }
             if (strtolower($email) !== strtolower((string)$user['email'])) {
                 $checkCooldown($user['email_changed_at'] ?? null, 'Email');
+                // Pemilik akun sendiri wajib membuktikan kepemilikan email
+                // baru dengan kode OTP 5 digit (tanpa demo) bila SMTP
+                // dikonfigurasi — token sekali pakai itu dihanguskan di
+                // sini, jadi satu token hanya bisa dipakai satu kali.
+                // Admin yang mengubah akun orang lain tidak kena aturan ini.
+                if ($isSelf && !$isAdmin) {
+                    $config = require __DIR__ . '/../config/config.php';
+                    if (EmailOtp::isMailConfigured($config)) {
+                        $emailToken = trim((string)($input['email_verification_token'] ?? ''));
+                        if ($emailToken === '' || !EmailOtp::consumeToken($db, $email, $emailToken)) {
+                            ApiResponse::error('Ganti email wajib verifikasi: minta kode 5 digit ke email baru dan verifikasi dulu sebelum menyimpan.', 422);
+                        }
+                    }
+                }
                 $updateData['email'] = $email;
                 $updateData['email_changed_at'] = gmdate('Y-m-d H:i:s');
             }

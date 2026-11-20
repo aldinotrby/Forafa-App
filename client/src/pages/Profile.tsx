@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from '../services/store'
 import { BIO_MAX_LENGTH, bioLength, changeWindow, formatChangeDate } from '../services/profile'
+import { requestEmailOtp, verifyEmailOtp } from '../services/emailOtpService'
 import { MediaUpload } from '../components/MediaUpload'
 import { Btn, Card, Field, inputCls } from '../components/ui'
 
@@ -11,6 +12,10 @@ import { Btn, Card, Field, inputCls } from '../components/ui'
  *   lokal sebagai data URL) atau hapus foto.
  * - Bio: maksimal 160 karakter, dengan penghitung sisa.
  * - Username & email: masing-masing hanya bisa diganti 1x dalam 7 hari.
+ *   Ganti email wajib verifikasi ulang: kode OTP 5 digit dikirim ke
+ *   email BARU dari forafagroup@gmail.com, lalu kode diverifikasi dan
+ *   email diganti dengan token sekali pakai itu (tanpa kode demo —
+ *   tanpa kode dari email sungguhan, email tidak bisa diganti).
  * - Ganti password: hanya untuk akun yang login pakai email + password.
  *   Akun Google tidak punya password lokal.
  * - Hapus akun: popup konfirmasi — wajib ketik username + (akun email)
@@ -35,6 +40,96 @@ export default function Profile() {
   const [delName, setDelName] = useState('')
   const [delPw, setDelPw] = useState('')
   const [delErr, setDelErr] = useState<string | null>(null)
+
+  // Verifikasi ulang saat ganti email: kode OTP 5 digit dikirim ke email
+  // BARU (dari forafagroup@gmail.com). Selama langkah kode, kolom email
+  // dikunci supaya target kode tidak berubah di tengah jalan.
+  const [emailOtpStep, setEmailOtpStep] = useState<'idle' | 'code'>('idle')
+  const [emailOtpTarget, setEmailOtpTarget] = useState('')
+  const [emailCode, setEmailCode] = useState('')
+  const [emailOtpErr, setEmailOtpErr] = useState<string | null>(null)
+  const [emailOtpBusy, setEmailOtpBusy] = useState(false)
+  const [expiresAt, setExpiresAt] = useState(0)
+  const [resendAt, setResendAt] = useState(0)
+  const [now, setNow] = useState(() => Date.now())
+
+  // Hitung mundur masa berlaku kode & jeda kirim ulang (langkah kode saja).
+  useEffect(() => {
+    if (emailOtpStep !== 'code') return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [emailOtpStep])
+
+  const fmtCountdown = (ms: number) => {
+    const s = Math.max(0, Math.ceil(ms / 1000))
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  }
+  const emailCodeLeftMs = expiresAt - now
+  const emailResendLeftMs = resendAt - now
+
+  /** Kirim kode OTP 5 digit ke email baru yang diketik. */
+  const sendEmailOtp = async () => {
+    setEmailOtpErr(null)
+    const target = email.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) {
+      setEmailOtpErr('Format email baru tidak valid.')
+      return
+    }
+    if (target === user!.email) {
+      setEmailOtpErr('Email baru sama dengan email saat ini.')
+      return
+    }
+    setEmailOtpBusy(true)
+    const r = await requestEmailOtp(target)
+    setEmailOtpBusy(false)
+    if (!r.ok) {
+      setEmailOtpErr(r.error ?? 'Gagal mengirim kode verifikasi.')
+      return
+    }
+    setEmailOtpTarget(target)
+    setExpiresAt(Date.now() + (r.expiresInSeconds ?? 600) * 1000)
+    setResendAt(Date.now() + (r.resendAfterSeconds ?? 60) * 1000)
+    setEmailCode('')
+    setEmailOtpStep('code')
+  }
+
+  /** Verifikasi kode, lalu ganti email dengan token sekali pakai itu. */
+  const verifyEmailOtpCode = async () => {
+    setEmailOtpErr(null)
+    if (!/^\d{5}$/.test(emailCode)) {
+      setEmailOtpErr('Kode verifikasi harus 5 angka.')
+      return
+    }
+    setEmailOtpBusy(true)
+    const v = await verifyEmailOtp(emailOtpTarget, emailCode)
+    setEmailOtpBusy(false)
+    if (!v.ok) {
+      setEmailOtpErr(v.error ?? 'Verifikasi gagal.')
+      return
+    }
+    const e = updateProfile({ email: emailOtpTarget, emailVerificationToken: v.verificationToken })
+    if (e) {
+      setEmailOtpErr(e)
+      return
+    }
+    setEmailOtpStep('idle')
+    setEmailCode('')
+    setSaved('Email berhasil diganti dan terverifikasi.')
+  }
+
+  const resendEmailOtp = async () => {
+    setEmailOtpErr(null)
+    setEmailOtpBusy(true)
+    const r = await requestEmailOtp(emailOtpTarget)
+    setEmailOtpBusy(false)
+    if (!r.ok) {
+      setEmailOtpErr(r.error ?? 'Gagal mengirim ulang kode.')
+      return
+    }
+    setExpiresAt(Date.now() + (r.expiresInSeconds ?? 600) * 1000)
+    setResendAt(Date.now() + (r.resendAfterSeconds ?? 60) * 1000)
+    setEmailCode('')
+  }
 
   if (!user) return null
   const isGoogle = user.provider === 'google'
@@ -151,12 +246,65 @@ export default function Profile() {
           label="Email"
           hint={
             emailWindow.allowed
-              ? 'Bisa diganti 1x dalam 7 hari.'
+              ? 'Bisa diganti 1x dalam 7 hari. Email baru wajib diverifikasi dengan kode 5 digit yang dikirim ke email baru itu.'
               : `Terakhir diganti — bisa diganti lagi pada ${formatChangeDate(emailWindow.nextAllowedAt)} (${emailWindow.daysLeft} hari lagi).`
           }
         >
-          <input type="email" className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} disabled={!emailWindow.allowed} />
+          <input
+            type="email"
+            className={inputCls}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={!emailWindow.allowed || emailOtpStep === 'code'}
+          />
         </Field>
+        {emailWindow.allowed && email.trim() !== user.email && emailOtpStep === 'idle' && (
+          <div>
+            <Btn variant="ghost" onClick={() => void sendEmailOtp()} disabled={emailOtpBusy}>
+              {emailOtpBusy ? 'Mengirim kode…' : 'Kirim kode verifikasi ke email baru'}
+            </Btn>
+            {emailOtpErr && <p role="alert" className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{emailOtpErr}</p>}
+          </div>
+        )}
+        {emailOtpStep === 'code' && (
+          <div className="space-y-3 rounded-xl border border-line bg-ground p-4">
+            <p className="rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand">
+              Kode verifikasi 5 digit dikirim ke <b>{emailOtpTarget}</b> dari <b>forafagroup@gmail.com</b>.
+              Periksa inbox (dan folder spam). Kode berlaku <b>{fmtCountdown(emailCodeLeftMs)}</b>.
+            </p>
+            <Field label="Kode verifikasi (5 digit)">
+              <input
+                className={`${inputCls} text-center text-2xl tracking-[0.5em]`}
+                value={emailCode}
+                onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                placeholder="12345"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+              />
+            </Field>
+            {emailOtpErr && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{emailOtpErr}</p>}
+            <div className="flex flex-wrap items-center gap-2">
+              <Btn onClick={() => void verifyEmailOtpCode()} disabled={emailOtpBusy}>
+                {emailOtpBusy ? 'Memverifikasi…' : 'Verifikasi & ganti email'}
+              </Btn>
+              <button
+                type="button"
+                className="text-sm font-semibold text-brand hover:underline disabled:text-mute disabled:no-underline"
+                disabled={emailOtpBusy || emailResendLeftMs > 0}
+                onClick={() => void resendEmailOtp()}
+              >
+                {emailResendLeftMs > 0 ? `Kirim ulang dalam ${fmtCountdown(emailResendLeftMs)}` : 'Kirim ulang kode'}
+              </button>
+              <button
+                type="button"
+                className="text-sm font-semibold text-mute hover:underline"
+                onClick={() => { setEmailOtpStep('idle'); setEmailOtpErr(null); setEmailCode('') }}
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        )}
         {err && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
         {saved && <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{saved}</p>}
         <Btn onClick={saveProfile}>Simpan profil</Btn>

@@ -20,7 +20,6 @@ DROP TABLE IF EXISTS `recommendation_rules`;
 DROP TABLE IF EXISTS `notifications`;
 DROP TABLE IF EXISTS `rate_limits`;
 DROP TABLE IF EXISTS `interaction_participants`;
-DROP TABLE IF EXISTS `otps`;
 DROP TABLE IF EXISTS `voting_answers`;
 DROP TABLE IF EXISTS `voting_questions`;
 DROP TABLE IF EXISTS `response_identities`;
@@ -167,25 +166,6 @@ CREATE TABLE `voting_answers` (
   CONSTRAINT `fk_voting_answers_question` FOREIGN KEY (`question_id`) REFERENCES `voting_questions` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ------------------------------------------------------------------------------
--- 8. Table: otps (WhatsApp OTP Verification & Anti-Spam)
--- ------------------------------------------------------------------------------
-CREATE TABLE `otps` (
-  `id` VARCHAR(50) NOT NULL,
-  `interaction_id` VARCHAR(50) NULL,
-  `phone_number` VARCHAR(30) NOT NULL,
-  `otp_hash` VARCHAR(64) NOT NULL,
-  `verification_token` VARCHAR(64) NULL,
-  `attempts` INT NOT NULL DEFAULT 0,
-  `status` VARCHAR(20) NOT NULL DEFAULT 'pending',
-  `expires_at` DATETIME NOT NULL,
-  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_otps_phone` (`phone_number`),
-  KEY `idx_otps_token` (`verification_token`),
-  KEY `idx_otps_expires` (`expires_at`),
-  CONSTRAINT `fk_otps_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------
 -- 9. Table: interaction_participants (Satu Identitas = Satu Voting per Link)

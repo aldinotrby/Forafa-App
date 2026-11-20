@@ -11,7 +11,6 @@ require_once __DIR__ . '/../models/Interaction.php';
 require_once __DIR__ . '/../models/Response.php';
 require_once __DIR__ . '/../models/VotingQuestion.php';
 require_once __DIR__ . '/../models/GoogleAuth.php';
-require_once __DIR__ . '/../models/OTP.php';
 require_once __DIR__ . '/../models/Participant.php';
 require_once __DIR__ . '/../models/Recommendation.php';
 require_once __DIR__ . '/../models/Session.php';
@@ -99,7 +98,6 @@ class PublicController {
         }
 
         $savedAnswers = [];
-        $verifiedPhone = null;
         $verifiedGoogleKey = null;
         $recommendationApplied = null;
 
@@ -109,58 +107,32 @@ class PublicController {
 
         // ------------------------------------------------------------------
         // VERIFIKASI IDENTITAS (khusus voting):
-        // - OTP WhatsApp wajib & token harus valid untuk interaksi ini
+        // - Verifikasi Google wajib: 1 akun Google = 1 suara per interaksi
         // - Satu akun (login session, termasuk Google) hanya boleh 1x vote
-        // - Satu nomor WhatsApp / satu akun Google hanya boleh 1x vote
         //
-        // Kontrak input (frontend main): verifikasi dikirim sebagai objek
-        //   verification: { type: 'whatsapp'|'google',
-        //                 identifier: 'wa:<nomor62>' | 'google:<sub>',
-        //                 token: <verification_token OTP> }
-        // Field top-level lama (phone / verification_token / otp_token)
-        // tetap diterima sebagai fallback (kompatibilitas be/server).
-        // Google tidak memakai token OTP: key google:<sub> sudah divalidasi
-        // di client lewat Google Identity Services.
+        // Kontrak input (frontend): verifikasi dikirim sebagai objek
+        //   verification: { type: 'google',
+        //                 identifier: 'google:<sub>' }
+        // Field top-level lama (verifiedVia / voterKey) tetap diterima
+        // sebagai fallback. Google tidak memakai token: key google:<sub>
+        // sudah divalidasi di client lewat Google Identity Services.
+        //
+        // Metode OTP WhatsApp sudah dihapus — endpoint
+        // /public/{slug}/otp/* beserta model OTP tidak ada lagi.
         // ------------------------------------------------------------------
         $verification = is_array($input['verification'] ?? null) ? $input['verification'] : [];
         $verifyType = strtolower(trim((string)($verification['type'] ?? $input['verifiedVia'] ?? $input['verified_via'] ?? '')));
         $verifyIdentifier = trim((string)($verification['identifier'] ?? $input['voterKey'] ?? $input['voter_key'] ?? ''));
-        $verifyToken = trim((string)($verification['token'] ?? $input['verification_token'] ?? $input['otp_token'] ?? ''));
 
         if ($kind === 'vote') {
-            if ($verifyType === 'google') {
-                $verifiedGoogleKey = $verifyIdentifier !== '' ? $verifyIdentifier : trim((string)($input['voterKey'] ?? ''));
-                if ($verifiedGoogleKey === '' || !str_starts_with($verifiedGoogleKey, 'google:')) {
-                    ApiResponse::error("Verifikasi Google wajib untuk voting. Login dengan Google terlebih dahulu.", 422);
-                }
+            $verifiedGoogleKey = $verifyIdentifier !== '' ? $verifyIdentifier : trim((string)($input['voterKey'] ?? ''));
+            if ($verifyType !== 'google' || $verifiedGoogleKey === '' || !str_starts_with($verifiedGoogleKey, 'google:')) {
+                ApiResponse::error("Verifikasi Google wajib untuk voting. Login dengan Google terlebih dahulu.", 422);
+            }
 
-                // 1 akun Google = 1 vote per interaksi
-                if (Participant::hasVoted($db, $interaction['id'], Participant::TYPE_GOOGLE, $verifiedGoogleKey)) {
-                    ApiResponse::error("Akun Google ini sudah pernah digunakan untuk mengisi voting ini. Setiap akun hanya dapat mengisi satu kali.", 409);
-                }
-            } else {
-                // WhatsApp (default): nomor bisa datang dari verification.identifier
-                // ('wa:628...'), atau field top-level phone / phone_number.
-                $phone = trim((string)($input['phone'] ?? $input['phone_number'] ?? ''));
-                if ($phone === '' && str_starts_with($verifyIdentifier, 'wa:')) {
-                    $phone = substr($verifyIdentifier, 3);
-                }
-                $otpToken = $verifyToken;
-
-                if ($phone === '' || $otpToken === '') {
-                    ApiResponse::error("Verifikasi OTP WhatsApp wajib untuk voting. Kirim dan verifikasi kode OTP terlebih dahulu.", 422);
-                }
-
-                if (!OTP::validateToken($db, $phone, $otpToken, $interaction['id'])) {
-                    ApiResponse::error("Token verifikasi OTP tidak valid atau telah kedaluwarsa. Silakan verifikasi ulang nomor WhatsApp.", 422);
-                }
-
-                $verifiedPhone = OTP::normalizePhoneNumber($phone);
-
-                // 1 WhatsApp number = 1 vote per interaction
-                if (Participant::hasVoted($db, $interaction['id'], Participant::TYPE_WHATSAPP, $verifiedPhone)) {
-                    ApiResponse::error("Nomor WhatsApp ini sudah pernah digunakan untuk mengisi voting ini. Setiap nomor hanya dapat mengisi satu kali.", 409);
-                }
+            // 1 akun Google = 1 vote per interaksi
+            if (Participant::hasVoted($db, $interaction['id'], Participant::TYPE_GOOGLE, $verifiedGoogleKey)) {
+                ApiResponse::error("Akun Google ini sudah pernah digunakan untuk mengisi voting ini. Setiap akun hanya dapat mengisi satu kali.", 409);
             }
 
             // 1 akun hanya boleh 1x vote (session login, termasuk Google login)
@@ -296,15 +268,7 @@ class PublicController {
 
         // Kunci partisipasi (anti pengisian berulang) sebelum menyimpan jawaban.
         // Unique key di interaction_participants mencegah race condition / double-submit.
-        if ($kind === 'vote' && ($verifiedPhone !== null || $verifiedGoogleKey !== null)) {
-            if ($verifiedPhone !== null) {
-                $locked = Participant::recordVote($db, $interaction['id'], Participant::TYPE_WHATSAPP, $verifiedPhone, $response['id']);
-                if (!$locked) {
-                    ResponseModel::delete($db, $response['id']);
-                    ApiResponse::error("Nomor WhatsApp ini sudah pernah digunakan untuk mengisi voting ini.", 409);
-                }
-            }
-
+        if ($kind === 'vote' && $verifiedGoogleKey !== null) {
             if ($verifiedGoogleKey !== null) {
                 $lockedGoogle = Participant::recordVote($db, $interaction['id'], Participant::TYPE_GOOGLE, $verifiedGoogleKey, $response['id']);
                 if (!$lockedGoogle) {

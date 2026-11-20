@@ -4,7 +4,6 @@
  * Manages unique voting participant records per interaction link.
  * Strictly enforces:
  * - 1 Google Account = 1 Vote per Interaction Link
- * - 1 WhatsApp Phone Number = 1 Vote per Interaction Link
  * - Anti-repeat voting submissions
  */
 
@@ -12,7 +11,6 @@ declare(strict_types=1);
 
 class Participant {
     public const TYPE_GOOGLE = 'google';
-    public const TYPE_WHATSAPP = 'whatsapp';
     public const TYPE_USER = 'user';
     public const TYPE_IP = 'ip';
 

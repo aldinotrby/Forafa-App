@@ -290,7 +290,7 @@ export default function VoterDashboard() {
                     selectedKey === v.key ? 'border-brand bg-brand text-white' : 'border-line bg-white text-mute hover:bg-ground'
                   }`}
                 >
-                  {v.kind === 'account' ? 'Akun · ' : v.method === 'google' ? 'G ' : '💬 '} {v.label}
+                  {v.kind === 'account' ? '' : v.method === 'google' ? 'G ' : '💬 '} {v.label}
                 </button>
               ))}
             </div>

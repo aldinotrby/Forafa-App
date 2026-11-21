@@ -44,13 +44,15 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
     "username": "rina_mekar",
     "email": "rina@desa-mekar.id",
     "password": "rina12345",
-    "role": "User"
+    "role": "User",
+    "email_verification_token": "token-dari-otp"
   }
   ```
 * **Validation Rules**:
   * `username`: 3-20 karakter, alfanumerik & underscore (`^[a-zA-Z0-9_]+$`)
   * `email`: Format email valid & belum terdaftar
-  * `password`: Minimal 8 karakter
+  * `password`: Minimal 8 karakter dan mengandung minimal 1 huruf kapital, 1 angka, dan 1 simbol (bila tidak memenuhi, `422` dengan pesan "Password minimal 8 karakter dan harus mengandung minimal 1 huruf kapital, 1 angka, dan 1 simbol.")
+* **Catatan**: bila SMTP dikonfigurasi, pendaftaran wajib memakai `email_verification_token` (token sekali pakai dari `POST /auth/email-otp/verify` untuk email yang didaftarkan) — tanpa token, endpoint mengembalikan `422`. Alurnya: `POST /auth/email-otp/send` (kode 5 digit ke email) → `POST /auth/email-otp/verify` → `POST /auth/register` dengan token. Bila SMTP belum dikonfigurasi, token tidak diperlukan.
 * **Response `201 Created`**:
   ```json
   {
@@ -186,7 +188,8 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
 
 ### 3.2 Tambah Pengguna Baru (Admin Only)
 * **Method & URL**: `POST /api/v1/users`
-* **Request Body**: `username`, `email`, `password`, `role` (`Administrator` | `User`)
+* **Request Body**: `username`, `email`, `password`, `role` (`Administrator` | `User`), `email_verification_token`?
+* **Catatan**: bila SMTP dikonfigurasi, `email_verification_token` (token sekali pakai dari `POST /auth/email-otp/verify` untuk email calon pengguna) wajib disertakan — tanpa token, endpoint mengembalikan `422`. Bila SMTP belum dikonfigurasi, token tidak diperlukan.
 * **Response `201 Created`**: Objek pengguna baru.
 
 ### 3.3 Detail Pengguna

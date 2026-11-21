@@ -1,16 +1,27 @@
 -- ==============================================================================
 -- Forafa-App Database Schema & Initial Seed Data (MySQL)
 -- ==============================================================================
-
-CREATE DATABASE IF NOT EXISTS `forafa_db` 
-CHARACTER SET utf8mb4 
-COLLATE utf8mb4_unicode_ci;
-
-USE `forafa_db`;
+--
+-- CATATAN: file ini TIDAK lagi membuat/memilih database sendiri.
+-- Nama database berasal dari DB_DATABASE di server/.env (default
+-- 'forafa_db', lihat server/src/config/config.php). setup.php sudah
+-- membuat database itu (bila belum ada) dan memilihnya sebelum
+-- mengeksekusi file ini, jadi jalankan selalu lewat setup.php:
+--   php server/setup.php
+-- Bila file ini diimpor manual (mysql < database.sql), pilih dulu
+-- database tujuannya, mis. USE `nama_db`; tanpa itu impor gagal
+-- dengan "No database selected".
 
 -- ------------------------------------------------------------------------------
 -- Table Cleanup
 -- ------------------------------------------------------------------------------
+SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS `recommendation_results`;
+DROP TABLE IF EXISTS `recommendation_rules`;
+DROP TABLE IF EXISTS `notifications`;
+DROP TABLE IF EXISTS `rate_limits`;
+DROP TABLE IF EXISTS `interaction_participants`;
+DROP TABLE IF EXISTS `email_otps`;
 DROP TABLE IF EXISTS `voting_answers`;
 DROP TABLE IF EXISTS `voting_questions`;
 DROP TABLE IF EXISTS `response_identities`;
@@ -18,6 +29,7 @@ DROP TABLE IF EXISTS `responses`;
 DROP TABLE IF EXISTS `interactions`;
 DROP TABLE IF EXISTS `sessions`;
 DROP TABLE IF EXISTS `users`;
+SET FOREIGN_KEY_CHECKS = 1;
 
 -- ------------------------------------------------------------------------------
 -- 1. Table: users
@@ -28,6 +40,10 @@ CREATE TABLE `users` (
   `email` VARCHAR(255) NOT NULL,
   `password_hash` VARCHAR(255) NOT NULL,
   `role` VARCHAR(20) NOT NULL DEFAULT 'User',
+  `bio` VARCHAR(160) NULL,
+  `avatar` TEXT NULL,
+  `username_changed_at` DATETIME NULL,
+  `email_changed_at` DATETIME NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_users_username` (`username`),
@@ -69,6 +85,7 @@ CREATE TABLE `interactions` (
   `start` VARCHAR(30) NULL,
   `end` VARCHAR(30) NULL,
   `options` JSON NOT NULL,
+  `recommendation_enabled` TINYINT(1) NOT NULL DEFAULT 0,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_interactions_slug` (`slug`),
@@ -111,11 +128,14 @@ CREATE TABLE `responses` (
   `reply` TEXT NULL,
   `shared` TINYINT(1) NOT NULL DEFAULT 0,
   `is_anonymous` TINYINT(1) NOT NULL DEFAULT 0,
+  `user_id` VARCHAR(50) NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_responses_interaction_id` (`interaction_id`),
   KEY `idx_responses_is_anonymous` (`is_anonymous`),
-  CONSTRAINT `fk_responses_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE CASCADE
+  KEY `idx_responses_user_id` (`user_id`),
+  CONSTRAINT `fk_responses_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_responses_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------
@@ -154,13 +174,120 @@ CREATE TABLE `voting_answers` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------
+-- 8. Table: email_otps (Kode verifikasi pendaftaran 5 digit via email)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `email_otps` (
+  `id` VARCHAR(50) NOT NULL,
+  `email` VARCHAR(255) NOT NULL,
+  `otp_hash` VARCHAR(64) NOT NULL,
+  `verification_token` VARCHAR(64) NULL,
+  `token_expires_at` DATETIME NULL,
+  `attempts` INT NOT NULL DEFAULT 0,
+  `status` VARCHAR(20) NOT NULL DEFAULT 'pending',
+  `expires_at` DATETIME NOT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_email_otps_email` (`email`),
+  KEY `idx_email_otps_token` (`verification_token`),
+  KEY `idx_email_otps_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 9. Table: interaction_participants (Satu Identitas = Satu Voting per Link)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `interaction_participants` (
+  `id` VARCHAR(50) NOT NULL,
+  `interaction_id` VARCHAR(50) NOT NULL,
+  `participant_type` VARCHAR(20) NOT NULL,
+  `identifier_hash` VARCHAR(64) NOT NULL,
+  `response_id` VARCHAR(50) NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_participant` (`interaction_id`, `participant_type`, `identifier_hash`),
+  KEY `idx_participants_interaction` (`interaction_id`),
+  KEY `idx_participants_response` (`response_id`),
+  CONSTRAINT `fk_participants_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_participants_response` FOREIGN KEY (`response_id`) REFERENCES `responses` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 10. Table: recommendation_rules (Aturan IF-ELSE Rekomendasi Voting)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `recommendation_rules` (
+  `id` VARCHAR(50) NOT NULL,
+  `interaction_id` VARCHAR(50) NOT NULL,
+  `target_question_id` VARCHAR(50) NOT NULL,
+  `conditions` JSON NOT NULL,
+  `recommended_choice` VARCHAR(255) NOT NULL,
+  `priority` INT NOT NULL DEFAULT 0,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_recommendation_rules_interaction` (`interaction_id`),
+  KEY `idx_recommendation_rules_target` (`target_question_id`),
+  KEY `idx_recommendation_rules_priority` (`priority`),
+  CONSTRAINT `fk_recommendation_rules_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_recommendation_rules_target` FOREIGN KEY (`target_question_id`) REFERENCES `voting_questions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 11. Table: recommendation_results (Hasil Rekomendasi per Pengisian)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `recommendation_results` (
+  `id` VARCHAR(50) NOT NULL,
+  `response_id` VARCHAR(50) NOT NULL,
+  `interaction_id` VARCHAR(50) NOT NULL,
+  `mode` VARCHAR(20) NOT NULL DEFAULT 'manual',
+  `recommendations` JSON NULL,
+  `matched_rule_ids` JSON NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_recommendation_results_response` (`response_id`),
+  KEY `idx_recommendation_results_interaction` (`interaction_id`),
+  CONSTRAINT `fk_recommendation_results_response` FOREIGN KEY (`response_id`) REFERENCES `responses` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_recommendation_results_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 12. Table: rate_limits (Penyimpanan Counter Rate Limiting)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `rate_limits` (
+  `key_hash` VARCHAR(64) NOT NULL,
+  `hits` INT NOT NULL DEFAULT 1,
+  `reset_at` DATETIME NOT NULL,
+  PRIMARY KEY (`key_hash`),
+  KEY `idx_rate_limits_reset` (`reset_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 13. Table: notifications (Notifikasi Balasan untuk Pengisi)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `notifications` (
+  `id` VARCHAR(50) NOT NULL,
+  `user_id` VARCHAR(50) NOT NULL,
+  `response_id` VARCHAR(50) NULL,
+  `interaction_id` VARCHAR(50) NULL,
+  `type` VARCHAR(30) NOT NULL DEFAULT 'reply',
+  `title` VARCHAR(255) NOT NULL,
+  `message` TEXT NULL,
+  `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_notifications_user` (`user_id`),
+  KEY `idx_notifications_is_read` (`is_read`),
+  CONSTRAINT `fk_notifications_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_notifications_response` FOREIGN KEY (`response_id`) REFERENCES `responses` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_notifications_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
 -- SEED DATA
 -- ------------------------------------------------------------------------------
 
--- Seed Users (Passwords: admin12345, rina12345, budi12345)
+-- Seed Users (Passwords: admin12345, forafa123, budi12345)
 INSERT INTO `users` (`id`, `username`, `email`, `password_hash`, `role`, `created_at`) VALUES
 ('u1', 'admin', 'admin@forafa.app', '$2y$10$jDdwQk2WUnbUM5XFJCQoB./vsH9.F7yOQnVCw.xKyB0vjKNvnJhce', 'Administrator', NOW() - INTERVAL 40 DAY),
-('u2', 'rina', 'rina@desa-mekar.id', '$2y$10$lltfLgnPLT4jc1NswDoLyedNK9OVsdLj0x7/gIPRqNFl5y2EFNNQC', 'User', NOW() - INTERVAL 33 DAY),
+('u2', 'forafa', 'rina@desa-mekar.id', '$2y$10$VqdpHBQQtsmxuT3D4Vv4C.quHuFIKvy66azOjkDe/wGUTmbzRywNC', 'User', NOW() - INTERVAL 33 DAY),
 ('u3', 'budi_rw', 'budi@rw05.id', '$2y$10$VqqUhYBx1T4VgjY/VFK25e8OBpWVsv17383couDyfUJK2sANEqQDK', 'User', NOW() - INTERVAL 25 DAY);
 
 -- Seed Interactions

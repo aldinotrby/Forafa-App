@@ -35,7 +35,7 @@ Dilakukan **sekali, sebelum pertama kali menjalankan aplikasi**. Pastikan layana
    ```powershell
    php setup.php
    ```
-   > **Catatan:** Skrip ini secara otomatis membuat database `forafa_db`, ketujuh tabelnya (`users`, `sessions`, `interactions`, `voting_questions`, `responses`, `response_identities`, `voting_answers`), serta mengisi data awal (*seed data*) — termasuk akun demo pada tabel Akun Demo di bawah.
+   > **Catatan:** Skrip ini secara otomatis membuat database `forafa_db`, ke-13 tabelnya (`users`, `sessions`, `interactions`, `voting_questions`, `responses`, `response_identities`, `voting_answers`, `email_otps`, `interaction_participants`, `recommendation_rules`, `recommendation_results`, `rate_limits`, `notifications`), serta mengisi data awal (*seed data*) — termasuk akun demo pada tabel Akun Demo di bawah.
 5. Kembali ke folder root proyek sebelum lanjut ke Langkah 2:
    ```powershell
    cd ..

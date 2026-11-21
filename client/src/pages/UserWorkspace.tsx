@@ -3,13 +3,17 @@ import { useStore, type Interaction, type Kind, type Response, type Status, type
 import { loadSeenResponseIds, markResponseSeen, markResponsesSeen } from '../services/ownerNotifications'
 import { MediaUpload } from '../components/MediaUpload'
 import { SessionStatus } from '../components/SessionStatus'
-import { Bar, Btn, Card, Field, KIND, KindBadge, Logo, Paginated, QR, STATUSES, StatusPill, exportCsv, fmtDate, inputCls, publicUrl } from '../components/ui'
+import Profile from './Profile'
+import { Bar, Btn, Card, Field, KIND, KindBadge, Logo, Paginated, QR, STATUSES, StatusPill, exportCsv, fmtDate, inputCls, maskName, publicUrl } from '../components/ui'
 
-type Nav = 'home' | Kind | 'flow' | 'notif'
+type Nav = 'home' | Kind | 'flow' | 'notif' | 'profil'
 
 export default function UserWorkspace({ asUserId, onBack, adminBanner, initialOpenId }: { asUserId?: string; onBack?: () => void; adminBanner?: string; initialOpenId?: string } = {}) {
   const { user, logout, interactions } = useStore()
   const effectiveUserId = asUserId ?? user!.id
+  /** Tampilan admin ("Melihat sebagai"): nama pengisi disensor di semua
+      tempat di workspace ini — privasi pengisi dari admin. */
+  const adminView = adminBanner !== undefined
   const [nav, setNav] = useState<Nav>('home')
   const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null)
   const [creating, setCreating] = useState<Kind | null>(null)
@@ -37,6 +41,9 @@ export default function UserWorkspace({ asUserId, onBack, adminBanner, initialOp
     { id: 'anon', label: 'Pesan Anonim', icon: KIND.anon.icon },
     { id: 'flow', label: 'Alur Kerja', icon: '⇢' },
     { id: 'notif', label: 'Notifikasi', icon: '🔔' },
+    // Profil selalu milik akun yang login; saat admin sedang melihat
+    // workspace pengguna lain, menu ini disembunyikan.
+    ...(onBack ? [] : [{ id: 'profil' as Nav, label: 'Profil', icon: '◉' }]),
   ]
 
   return (
@@ -82,7 +89,9 @@ export default function UserWorkspace({ asUserId, onBack, adminBanner, initialOp
 
       <main className="min-w-0 p-5 sm:p-8">
         {open ? (
-          <Detail it={open} back={() => setOpenId(null)} seenIds={seenIds} onSeenChange={setSeenIds} />
+          <Detail it={open} back={() => setOpenId(null)} seenIds={seenIds} onSeenChange={setSeenIds} adminView={adminView} />
+        ) : nav === 'profil' ? (
+          <Profile />
         ) : nav === 'flow' ? (
           <Flow />
         ) : nav === 'notif' ? (
@@ -91,9 +100,10 @@ export default function UserWorkspace({ asUserId, onBack, adminBanner, initialOp
             resp={resp}
             onOpenResponse={openResponse}
             onMarkAll={() => setSeenIds(markResponsesSeen(unseen.map((r) => r.id)))}
+            adminView={adminView}
           />
         ) : (
-          <Listing nav={nav} onOpen={setOpenId} onCreate={setCreating} effectiveUserId={effectiveUserId} targetUsername={adminBanner} seenIds={seenIds} />
+          <Listing nav={nav} onOpen={setOpenId} onCreate={setCreating} effectiveUserId={effectiveUserId} targetUsername={adminBanner} seenIds={seenIds} adminView={adminView} />
         )}
       </main>
 
@@ -116,12 +126,12 @@ function useMine(effectiveUserId: string) {
   return { mine, resp: responses.filter((r) => ids.has(r.iid)) }
 }
 
-function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername, seenIds }: {
-  nav: Nav; onOpen: (id: string) => void; onCreate: (k: Kind) => void; effectiveUserId: string; targetUsername?: string; seenIds: string[]
+function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername, seenIds, adminView }: {
+  nav: Nav; onOpen: (id: string) => void; onCreate: (k: Kind) => void; effectiveUserId: string; targetUsername?: string; seenIds: string[]; adminView?: boolean
 }) {
   const { user, interactions } = useStore()
   const { mine, resp } = useMine(effectiveUserId)
-  const kind = nav === 'home' || nav === 'flow' || nav === 'notif' ? null : nav
+  const kind = nav === 'home' || nav === 'flow' || nav === 'notif' || nav === 'profil' ? null : nav
   const list = kind ? mine.filter((i) => i.kind === kind) : mine
   const count = (k: Kind) => mine.filter((i) => i.kind === k).length
   const recent = [...resp].sort((a, b) => +new Date(b.at) - +new Date(a.at)).slice(0, 6)
@@ -178,7 +188,7 @@ function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername, seenI
                       <span className={`size-2.5 shrink-0 rounded-full ${KIND[it.kind].bg}`} />
                       {!seenIds.includes(r.id) && <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">BARU</span>}
                       <span className="min-w-0 flex-1 truncate">
-                        <b>{r.name ?? 'Anonim'}</b>{' '}
+                        <b>{r.name ? (adminView ? maskName(r.name) : r.name) : 'Anonim'}</b>{' '}
                         {r.choice ? `memilih ${r.choice}` : `menulis: ${r.message}`}
                       </span>
                       <button className="hidden shrink-0 text-xs font-semibold text-brand hover:underline sm:block" onClick={() => onOpen(it.id)}>{it.title}</button>
@@ -227,11 +237,12 @@ function Listing({ nav, onOpen, onCreate, effectiveUserId, targetUsername, seenI
  * teratas (dengan lencana BARU), lalu riwayat respons terbaru. Membuka
  * sebuah respons menandainya dibaca dan membuka detail interaksinya.
  */
-function Notifications({ unseen, resp, onOpenResponse, onMarkAll }: {
+function Notifications({ unseen, resp, onOpenResponse, onMarkAll, adminView }: {
   unseen: Response[]
   resp: Response[]
   onOpenResponse: (r: Response) => void
   onMarkAll: () => void
+  adminView?: boolean
 }) {
   const { interactions } = useStore()
   const findInteraction = (iid: string) => interactions.find((i) => i.id === iid)
@@ -334,7 +345,7 @@ function Notifications({ unseen, resp, onOpenResponse, onMarkAll }: {
                 <span className={`size-2.5 shrink-0 rounded-full ${KIND[it.kind].bg}`} aria-hidden />
                 {isNew && <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">BARU</span>}
                 <span className="min-w-0 flex-1 truncate">
-                  <b>{r.name ?? 'Anonim'}</b>{' '}
+                  <b>{r.name ? (adminView ? maskName(r.name) : r.name) : 'Anonim'}</b>{' '}
                   {r.choice ? `memilih ${r.choice}` : `menulis: ${r.message}`}
                 </span>
                 <button className="shrink-0 text-xs font-semibold text-brand hover:underline" onClick={() => onOpenResponse(r)}>{it.title}</button>
@@ -492,7 +503,7 @@ function Create({ kind, onClose, onDone, ownerIdOverride }: { kind: Kind; onClos
   )
 }
 
-function Detail({ it, back, seenIds, onSeenChange }: { it: Interaction; back: () => void; seenIds: string[]; onSeenChange: (ids: string[]) => void }) {
+function Detail({ it, back, seenIds, onSeenChange, adminView }: { it: Interaction; back: () => void; seenIds: string[]; onSeenChange: (ids: string[]) => void; adminView?: boolean }) {
   const { responses, updateInteraction, removeInteraction } = useStore()
   const [tab, setTab] = useState<'hasil' | 'respons' | 'bagikan'>('hasil')
   const rs = responses.filter((r) => r.iid === it.id)
@@ -532,7 +543,7 @@ function Detail({ it, back, seenIds, onSeenChange }: { it: Interaction; back: ()
       </div>
 
       {tab === 'hasil' && <Stats it={it} rs={rs} />}
-      {tab === 'respons' && <Responses it={it} rs={rs} seenIds={seenIds} />}
+      {tab === 'respons' && <Responses it={it} rs={rs} seenIds={seenIds} adminView={adminView} />}
       {tab === 'bagikan' && (
         <div className="space-y-6">
           <Share it={it} />
@@ -632,16 +643,16 @@ function Stats({ it, rs }: { it: Interaction; rs: Response[] }) {
   )
 }
 
-function VerifiedChip({ r }: { r: Response }) {
+function VerifiedChip({ r, adminView }: { r: Response; adminView?: boolean }) {
   if (!r.verifiedVia) return null
   return (
-    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700" title={r.verificationLabel}>
-      ✓ {r.verifiedVia === 'google' ? 'Google' : 'WhatsApp'}{r.verificationLabel ? ` · ${r.verificationLabel}` : ''}
+    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700" title={r.verificationLabel && adminView ? maskName(r.verificationLabel) : r.verificationLabel}>
+      ✓ {r.verifiedVia === 'google' ? 'Google' : 'WhatsApp'}{r.verificationLabel ? ` · ${adminView ? maskName(r.verificationLabel) : r.verificationLabel}` : ''}
     </span>
   )
 }
 
-function Responses({ it, rs, seenIds }: { it: Interaction; rs: Response[]; seenIds: string[] }) {
+function Responses({ it, rs, seenIds, adminView }: { it: Interaction; rs: Response[]; seenIds: string[]; adminView?: boolean }) {
   const { patchResponse, removeResponse } = useStore()
   const [q, setQ] = useState('')
   const [st, setSt] = useState<'Semua' | Status>('Semua')
@@ -661,9 +672,9 @@ function Responses({ it, rs, seenIds }: { it: Interaction; rs: Response[]; seenI
       <Paginated items={list} render={(r) => it.kind === 'vote' && it.questions?.length ? (
         <div key={r.id} className="space-y-2 py-3 text-sm">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="flex-1 font-semibold">{r.name ?? 'Anonim'}{r.anonymous && <span className="ml-2 rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}</span>
+            <span className="flex-1 font-semibold">{r.name ? (adminView ? maskName(r.name) : r.name) : 'Anonim'}{r.anonymous && <span className="ml-2 rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}</span>
             {!seenIds.includes(r.id) && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">BARU</span>}
-            <VerifiedChip r={r} />
+            <VerifiedChip r={r} adminView={adminView} />
             <time className="w-28 text-right text-xs text-mute">{fmtDate(r.at)}</time>
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -674,20 +685,20 @@ function Responses({ it, rs, seenIds }: { it: Interaction; rs: Response[]; seenI
         </div>
       ) : it.kind === 'vote' ? (
         <div key={r.id} className="flex flex-wrap items-center gap-2 py-3 text-sm">
-          <span className="flex-1 font-semibold">{r.name ?? 'Anonim'}{r.anonymous && <span className="ml-2 rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}</span>
+          <span className="flex-1 font-semibold">{r.name ? (adminView ? maskName(r.name) : r.name) : 'Anonim'}{r.anonymous && <span className="ml-2 rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}</span>
           {!seenIds.includes(r.id) && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">BARU</span>}
-          <VerifiedChip r={r} />
+          <VerifiedChip r={r} adminView={adminView} />
           <span className="rounded-full bg-vote-soft px-3 py-0.5 text-xs font-semibold text-vote">{r.choice}</span>
           <time className="w-28 text-right text-xs text-mute">{fmtDate(r.at)}</time>
         </div>
       ) : (
-        <ResponseRow key={r.id} r={r} anon={it.kind === 'anon'} isNew={!seenIds.includes(r.id)} onPatch={(p) => patchResponse(r.id, p)} onDelete={() => removeResponse(r.id)} />
+        <ResponseRow key={r.id} r={r} anon={it.kind === 'anon'} isNew={!seenIds.includes(r.id)} onPatch={(p) => patchResponse(r.id, p)} onDelete={() => removeResponse(r.id)} adminView={adminView} />
       )} />
     </Card>
   )
 }
 
-function ResponseRow({ r, anon, isNew, onPatch, onDelete }: { r: Response; anon: boolean; isNew: boolean; onPatch: (p: Partial<Response>) => void; onDelete: () => void }) {
+function ResponseRow({ r, anon, isNew, onPatch, onDelete, adminView }: { r: Response; anon: boolean; isNew: boolean; onPatch: (p: Partial<Response>) => void; onDelete: () => void; adminView?: boolean }) {
   const [reply, setReply] = useState(r.reply ?? '')
   const [open, setOpen] = useState(false)
   // Anonim berlaku per-interaksi ('anon') atau per-respons (pengirim memilih Anonymous di form publik).
@@ -695,7 +706,7 @@ function ResponseRow({ r, anon, isNew, onPatch, onDelete }: { r: Response; anon:
   return (
     <div className="space-y-2 py-4 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <b>{isAnon ? 'Anonim' : r.name}</b>
+        <b>{isAnon ? 'Anonim' : adminView && r.name ? maskName(r.name) : r.name}</b>
         {isNew && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">BARU</span>}
         {isAnon && <span className="rounded-full bg-anon-soft px-2 py-0.5 text-xs font-semibold text-anon">Anonymous</span>}
         <time className="text-xs text-mute">{fmtDate(r.at)}</time>

@@ -93,17 +93,32 @@ return [
         'client_id' => env('GOOGLE_CLIENT_ID', 'forafa-google-client-id.apps.googleusercontent.com'),
         'client_secret' => env('GOOGLE_CLIENT_SECRET', ''),
     ],
-    'whatsapp_otp' => [
-        'provider' => env('WHATSAPP_PROVIDER', 'mock'), // 'mock', 'fonnte', 'wablas', 'twilio'
-        'api_key' => env('WHATSAPP_API_KEY', ''),
-        'otp_expire_minutes' => (int)env('OTP_EXPIRE_MINUTES', 5),
-        'max_attempts' => (int)env('OTP_MAX_ATTEMPTS', 3),
+    'mail' => [
+        // Pengirim kode OTP verifikasi pendaftaran (Gmail SMTP).
+        // Gmail hanya menerima App Password 16 karakter, bukan password
+        // akun biasa — lihat docs/email-otp-setup.md.
+        'from_address' => env('MAIL_FROM_ADDRESS', 'forafagroup@gmail.com'),
+        'from_name' => env('MAIL_FROM_NAME', 'Forafa-App'),
+        'host' => env('MAIL_HOST', 'smtp.gmail.com'),
+        'port' => (int) env('MAIL_PORT', 465),
+        'encryption' => env('MAIL_ENCRYPTION', 'ssl'), // ssl | tls | none (none hanya untuk pengujian lokal)
+        'username' => env('MAIL_USERNAME', ''),
+        'password' => env('MAIL_APP_PASSWORD', ''),
+        'timeout_seconds' => (int) env('MAIL_TIMEOUT_SECONDS', 15),
+    ],
+    'email_otp' => [
+        // Kode verifikasi pendaftaran: 5 digit, berlaku 10 menit.
+        'expire_minutes' => (int) env('EMAIL_OTP_EXPIRE_MINUTES', 10),
+        'max_attempts' => (int) env('EMAIL_OTP_MAX_ATTEMPTS', 3),
+        'resend_cooldown_seconds' => (int) env('EMAIL_OTP_RESEND_COOLDOWN_SECONDS', 60),
+        // Token sekali pakai yang diterbitkan setelah kode benar,
+        // dipakai untuk menyelesaikan POST /auth/register.
+        'token_expire_minutes' => (int) env('EMAIL_OTP_TOKEN_EXPIRE_MINUTES', 15),
     ],
     'rate_limit' => [
         'enabled' => (bool)env('RATE_LIMIT_ENABLED', true),
         'api_max_requests' => (int)env('RATE_LIMIT_API_MAX', 60),       // Max 60 req/min for general API
         'submit_max_requests' => (int)env('RATE_LIMIT_SUBMIT_MAX', 5),  // Max 5 submit req/min per IP
-        'otp_max_requests' => (int)env('RATE_LIMIT_OTP_MAX', 3),        // Max 3 OTP sends per 10 min
     ],
     'anti_spam' => [
         'honeypot_enabled' => (bool)env('SPAM_HONEYPOT_ENABLED', true),

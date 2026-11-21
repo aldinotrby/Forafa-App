@@ -176,7 +176,9 @@ class ResponseController {
                     'interaction_id' => $response['interaction_id'],
                     'type' => 'reply',
                     'title' => 'Balasan baru untuk tanggapan Anda',
-                    'message' => 'Pembuat link "' . ($interaction['title'] ?? 'interaksi') . '" membalas: ' . mb_substr($newReply, 0, 180),
+                    // mb_substr bila tersedia (potong per karakter), bila tidak
+                    // pakai substr (PHP tanpa ekstensi mbstring).
+                    'message' => 'Pembuat link "' . ($interaction['title'] ?? 'interaksi') . '" membalas: ' . (function_exists('mb_substr') ? mb_substr($newReply, 0, 180) : substr($newReply, 0, 180)),
                 ]);
             }
         }
@@ -188,7 +190,11 @@ class ResponseController {
 
     /**
      * GET /responses/mine
-     * Riwayat pengisian milik akun yang sedang login (hanya data sendiri).
+     * Riwayat pengisian milik akun yang sedang login (hanya data milik
+     * sendiri): respons yang dikirim saat sesi login aktif — kolom
+     * `user_id` diisi PublicController saat submit. Identitas yang
+     * di-anonimkan tetap tampil sebagai Anonim. Dipakai untuk riwayat
+     * pengisi dari backend; tanpa login, endpoint ini menolak (401).
      */
     public static function mine(): void {
         $currentUser = AuthMiddleware::authenticate();

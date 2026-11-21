@@ -44,6 +44,10 @@ Menyimpan akun pengguna platform (Administrator dan Pengguna Biasa).
 | `email` | `VARCHAR(255)` | NO | - | **Unique Index** (`uk_users_email`). Format email valid |
 | `password_hash` | `VARCHAR(255)` | NO | - | Hash Bcrypt (`$2y$...`) |
 | `role` | `VARCHAR(20)` | NO | `'User'` | Peran pengguna: `'Administrator'` atau `'User'` |
+| `bio` | `VARCHAR(160)` | YES | `NULL` | Bio profil pengguna (maks. 160 karakter) |
+| `avatar` | `TEXT` | YES | `NULL` | URL foto profil (Cloudinary atau lokal) |
+| `username_changed_at` | `DATETIME` | YES | `NULL` | Terakhir ganti username (cooldown 1x dalam 7 hari) |
+| `email_changed_at` | `DATETIME` | YES | `NULL` | Terakhir ganti email (cooldown 1x dalam 7 hari) |
 | `created_at` | `DATETIME` | NO | `CURRENT_TIMESTAMP` | Waktu pendaftaran |
 
 ---
@@ -117,6 +121,7 @@ Menyimpan data masukan suara, aspirasi, atau pesan anonim dari masyarakat publik
 | `reply` | `TEXT` | YES | `NULL` | Balasan atau tanggapan resmi dari pemilik formulir |
 | `shared` | `TINYINT(1)` | NO | `0` | Apakah balasan dipublikasikan (1 = Ya, 0 = Tidak) |
 | `is_anonymous` | `TINYINT(1)` | NO | `0` | Pilihan privasi: 1 = Anonymous, 0 = Nama Asli. Indeks: `idx_responses_is_anonymous` |
+| `user_id` | `VARCHAR(50)` | YES | `NULL` | **Foreign Key** -> `users(id)` ON DELETE SET NULL. Id akun pengirim bila submit saat login (untuk `GET /responses/mine`). Indeks: `idx_responses_user_id` |
 | `created_at` | `DATETIME` | NO | `CURRENT_TIMESTAMP` | Waktu submit respon oleh pengunjung |
 
 ---
@@ -146,3 +151,94 @@ Menyimpan rincian pilihan jawaban pemilih untuk masing-masing pertanyaan berting
 | `role_key` | `VARCHAR(50)` | NO | - | Posisi kepengurusan yang dipilih (`ketua`, `wakil`, `sekretaris`, `bendahara`) |
 | `choice` | `VARCHAR(255)` | NO | - | Nama kandidat yang dipilih untuk posisi tersebut |
 | `created_at` | `DATETIME` | NO | `CURRENT_TIMESTAMP` | Waktu penyimpanan jawaban |
+
+---
+
+## 📋 8. Tabel: `email_otps`
+Menyimpan kode verifikasi 5 digit yang dikirim ke email untuk pendaftaran akun, ganti email, dan penambahan pengguna oleh admin. Kode disimpan sebagai hash SHA-256; setelah verifikasi berhasil, diterbitkan token sekali pakai (`verification_token`, berlaku 15 menit) yang dihanguskan saat dipakai.
+
+| Nama Kolom | Tipe Data | Nullable | Default | Keterangan & Constraints |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | `VARCHAR(50)` | NO | - | **Primary Key**. Format: `eotp_[hex]` |
+| `email` | `VARCHAR(255)` | NO | - | Alamat email tujuan kode verifikasi. Indeks: `idx_email_otps_email` |
+| `otp_hash` | `VARCHAR(64)` | NO | - | Hash SHA-256 dari kode 5 digit |
+| `verification_token` | `VARCHAR(64)` | YES | `NULL` | Token sekali pakai hasil verifikasi kode. Indeks: `idx_email_otps_token` |
+| `token_expires_at` | `DATETIME` | YES | `NULL` | Batas berlaku token verifikasi (15 menit) |
+| `attempts` | `INT` | NO | `0` | Jumlah percobaan kode salah (maks. 3x, lalu diblokir) |
+| `status` | `VARCHAR(20)` | NO | `'pending'` | Status: `'pending'`, `'verified'`, `'consumed'`, `'expired'`, `'blocked'` |
+| `expires_at` | `DATETIME` | NO | - | Batas berlaku kode OTP (10 menit). Indeks: `idx_email_otps_expires` |
+| `created_at` | `DATETIME` | NO | `CURRENT_TIMESTAMP` | Waktu pengiriman kode |
+
+---
+
+## 📋 9. Tabel: `interaction_participants`
+Mencatat identitas pengisi yang sudah mengisi sebuah link, untuk menegakkan aturan satu identitas = satu pengisian per link (duplikat ditolak 409). Identitas disimpan sebagai hash, bukan nilai aslinya.
+
+| Nama Kolom | Tipe Data | Nullable | Default | Keterangan & Constraints |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | `VARCHAR(50)` | NO | - | **Primary Key**. Format: `pt_[hex]` |
+| `interaction_id` | `VARCHAR(50)` | NO | - | **Foreign Key** -> `interactions(id)` ON DELETE CASCADE. Indeks: `idx_participants_interaction` |
+| `participant_type` | `VARCHAR(20)` | NO | - | Jenis identitas: `'google'`, `'user'`, `'ip'` |
+| `identifier_hash` | `VARCHAR(64)` | NO | - | Hash SHA-256 dari identifier (mis. `google:<sub>` atau id akun). **Unique Index** (`uk_participant`) bersama `interaction_id` + `participant_type` |
+| `response_id` | `VARCHAR(50)` | YES | `NULL` | **Foreign Key** -> `responses(id)` ON DELETE SET NULL. Indeks: `idx_participants_response` |
+| `created_at` | `DATETIME` | NO | `CURRENT_TIMESTAMP` | Waktu pencatatan partisipasi |
+
+---
+
+## 📋 10. Tabel: `recommendation_rules`
+Menyimpan aturan IF-ELSE rekomendasi voting: bila jawaban pada pertanyaan kriteria cocok dengan kondisi, posisi target diisi otomatis dengan pilihan yang direkomendasikan.
+
+| Nama Kolom | Tipe Data | Nullable | Default | Keterangan & Constraints |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | `VARCHAR(50)` | NO | - | **Primary Key**. Format: `rr_[hex]` |
+| `interaction_id` | `VARCHAR(50)` | NO | - | **Foreign Key** -> `interactions(id)` ON DELETE CASCADE. Indeks: `idx_recommendation_rules_interaction` |
+| `target_question_id` | `VARCHAR(50)` | NO | - | **Foreign Key** -> `voting_questions(id)` ON DELETE CASCADE. Pertanyaan yang posisinya direkomendasikan. Indeks: `idx_recommendation_rules_target` |
+| `conditions` | `JSON` | NO | - | Kondisi IF-ELSE pada jawaban pertanyaan kriteria (JSON) |
+| `recommended_choice` | `VARCHAR(255)` | NO | - | Pilihan yang direkomendasikan untuk pertanyaan target |
+| `priority` | `INT` | NO | `0` | Prioritas aturan (lebih tinggi didahulukan). Indeks: `idx_recommendation_rules_priority` |
+| `is_active` | `TINYINT(1)` | NO | `1` | Status aturan aktif (1 = Aktif, 0 = Nonaktif) |
+| `created_at` | `DATETIME` | NO | `CURRENT_TIMESTAMP` | Waktu pembuatan aturan |
+
+---
+
+## 📋 11. Tabel: `recommendation_results`
+Menyimpan hasil penerapan rekomendasi pada setiap pengisian voting (mode manual atau rekomendasi, aturan yang cocok, dan pilihan hasil rekomendasinya).
+
+| Nama Kolom | Tipe Data | Nullable | Default | Keterangan & Constraints |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | `VARCHAR(50)` | NO | - | **Primary Key**. Format: `rrs_[hex]` |
+| `response_id` | `VARCHAR(50)` | NO | - | **Foreign Key** -> `responses(id)` ON DELETE CASCADE. **Unique Index** (`uk_recommendation_results_response`) |
+| `interaction_id` | `VARCHAR(50)` | NO | - | **Foreign Key** -> `interactions(id)` ON DELETE CASCADE. Indeks: `idx_recommendation_results_interaction` |
+| `mode` | `VARCHAR(20)` | NO | `'manual'` | Mode pengisian: `'manual'` atau `'recommendation'` |
+| `recommendations` | `JSON` | YES | `NULL` | Pilihan hasil rekomendasi per posisi target (JSON) |
+| `matched_rule_ids` | `JSON` | YES | `NULL` | Daftar id aturan yang cocok (JSON array) |
+| `created_at` | `DATETIME` | NO | `CURRENT_TIMESTAMP` | Waktu penyimpanan hasil |
+
+---
+
+## 📋 12. Tabel: `rate_limits`
+Menyimpan counter rate limiting pengiriman publik (maks. 5 kiriman per menit per kunci) untuk anti-spam.
+
+| Nama Kolom | Tipe Data | Nullable | Default | Keterangan & Constraints |
+| :--- | :--- | :--- | :--- | :--- |
+| `key_hash` | `VARCHAR(64)` | NO | - | **Primary Key**. Hash dari kunci pembatas (mis. alamat IP + endpoint) |
+| `hits` | `INT` | NO | `1` | Jumlah kiriman dalam jendela berjalan |
+| `reset_at` | `DATETIME` | NO | - | Waktu reset jendela. Indeks: `idx_rate_limits_reset` |
+
+
+---
+
+## 📋 13. Tabel: `notifications`
+Menyimpan notifikasi balasan untuk pengisi: saat pembuat link membalas kiriman, pengisi mendapat notifikasi yang tampil di dashboard pengisi.
+
+| Nama Kolom | Tipe Data | Nullable | Default | Keterangan & Constraints |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | `VARCHAR(50)` | NO | - | **Primary Key**. Format: `nt_[hex]` |
+| `user_id` | `VARCHAR(50)` | NO | - | **Foreign Key** -> `users(id)` ON DELETE CASCADE. Indeks: `idx_notifications_user` |
+| `response_id` | `VARCHAR(50)` | YES | `NULL` | **Foreign Key** -> `responses(id)` ON DELETE CASCADE |
+| `interaction_id` | `VARCHAR(50)` | YES | `NULL` | **Foreign Key** -> `interactions(id)` ON DELETE SET NULL |
+| `type` | `VARCHAR(30)` | NO | `'reply'` | Jenis notifikasi (mis. `'reply'` untuk balasan pembuat link) |
+| `title` | `VARCHAR(255)` | NO | - | Judul notifikasi |
+| `message` | `TEXT` | YES | `NULL` | Isi pesan notifikasi |
+| `is_read` | `TINYINT(1)` | NO | `0` | Status dibaca (1 = Sudah dibaca, 0 = Belum). Indeks: `idx_notifications_is_read` |
+| `created_at` | `DATETIME` | NO | `CURRENT_TIMESTAMP` | Waktu pembuatan notifikasi |

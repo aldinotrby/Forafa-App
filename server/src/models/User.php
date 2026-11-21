@@ -15,6 +15,14 @@ class User {
             'username' => $row['username'],
             'email' => $row['email'],
             'role' => $row['role'],
+            'bio' => $row['bio'] ?? null,
+            'avatar' => $row['avatar'] ?? null,
+            'username_changed_at' => !empty($row['username_changed_at'])
+                ? gmdate('Y-m-d\TH:i:s\Z', strtotime($row['username_changed_at']))
+                : null,
+            'email_changed_at' => !empty($row['email_changed_at'])
+                ? gmdate('Y-m-d\TH:i:s\Z', strtotime($row['email_changed_at']))
+                : null,
             'created_at' => !empty($row['created_at'])
                 ? gmdate('Y-m-d\TH:i:s\Z', strtotime($row['created_at']))
                 : null,
@@ -82,6 +90,10 @@ class User {
             'username' => $data['username'],
             'email' => $data['email'],
             'role' => $role,
+            'bio' => null,
+            'avatar' => null,
+            'username_changed_at' => null,
+            'email_changed_at' => null,
             'created_at' => gmdate('Y-m-d\TH:i:s\Z', strtotime($now)),
         ];
     }
@@ -105,6 +117,26 @@ class User {
         if (isset($data['password'])) {
             $fields[] = "password_hash = :password_hash";
             $params[':password_hash'] = password_hash($data['password'], PASSWORD_BCRYPT);
+        }
+        // Profil: bio (maks. 160 karakter, dipotong di controller), avatar
+        // (URL Cloudinary atau data URL; null = hapus foto), dan stempel
+        // perubahan username/email untuk cooldown 7 hari. array_key_exists
+        // dipakai supaya nilai null (hapus foto) tidak terlewat.
+        if (array_key_exists('bio', $data)) {
+            $fields[] = "bio = :bio";
+            $params[':bio'] = $data['bio'];
+        }
+        if (array_key_exists('avatar', $data)) {
+            $fields[] = "avatar = :avatar";
+            $params[':avatar'] = $data['avatar'];
+        }
+        if (array_key_exists('username_changed_at', $data)) {
+            $fields[] = "username_changed_at = :username_changed_at";
+            $params[':username_changed_at'] = $data['username_changed_at'];
+        }
+        if (array_key_exists('email_changed_at', $data)) {
+            $fields[] = "email_changed_at = :email_changed_at";
+            $params[':email_changed_at'] = $data['email_changed_at'];
         }
 
         if (!empty($fields)) {

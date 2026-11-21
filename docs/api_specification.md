@@ -117,8 +117,8 @@ Autentikasi akun menggunakan username atau email.
 * **Request Payload**:
   ```json
   {
-    "id": "rina",
-    "password": "rina12345"
+    "id": "forafa",
+    "password": "forafa123"
   }
   ```
 * **Respon Sukses `200 OK`**:
@@ -128,7 +128,7 @@ Autentikasi akun menggunakan username atau email.
     "token_type": "bearer",
     "user": {
       "id": "u2",
-      "username": "rina",
+      "username": "forafa",
       "email": "rina@desa-mekar.id",
       "role": "User",
       "created_at": "2026-10-13T12:00:00Z"
@@ -158,7 +158,7 @@ Mendapatkan identitas pengguna pemilik token JWT aktif.
   ```json
   {
     "id": "u2",
-    "username": "rina",
+    "username": "forafa",
     "email": "rina@desa-mekar.id",
     "role": "User",
     "created_at": "2026-10-13T12:00:00Z"
@@ -191,7 +191,7 @@ Mendapatkan identitas pengguna pemilik token JWT aktif.
     },
     {
       "id": "u2",
-      "username": "rina",
+      "username": "forafa",
       "email": "rina@desa-mekar.id",
       "role": "User",
       "created_at": "2026-09-10T00:00:00Z"
@@ -208,9 +208,11 @@ Mendapatkan identitas pengguna pemilik token JWT aktif.
     "username": "budi_rw",
     "email": "budi@rw05.id",
     "password": "budi12345",
-    "role": "User"
+    "role": "User",
+    "email_verification_token": "token-dari-otp"
   }
   ```
+* **Catatan**: bila SMTP dikonfigurasi, `email_verification_token` (token sekali pakai dari `POST /auth/email-otp/verify` untuk email calon pengguna) wajib disertakan — tanpa token, endpoint mengembalikan `422`. Bila SMTP belum dikonfigurasi, token tidak diperlukan.
 * **Respon Sukses `201 Created`**: Objek data user baru.
 
 ### 3.3 Detail Pengguna Berdasarkan ID
@@ -230,23 +232,7 @@ Mendapatkan identitas pengguna pemilik token JWT aktif.
   ```
 * **Respon Sukses `200 OK`**: Objek pengguna yang telah diperbarui.
 
-### 3.5 Reset Password Pengguna (Admin)
-* **Metode & Endpoint**: `POST /api/v1/users/{id}/reset-password`
-* **Akses**: Khusus Administrator
-* **Request Payload**:
-  ```json
-  {
-    "new_password": "passwordBaru123"
-  }
-  ```
-* **Respon Sukses `200 OK`**:
-  ```json
-  {
-    "message": "Password pengguna berhasil diperbarui."
-  }
-  ```
-
-### 3.6 Hapus Pengguna (Admin)
+### 3.5 Hapus Pengguna (Admin)
 * **Metode & Endpoint**: `DELETE /api/v1/users/{id}`
 * **Akses**: Khusus Administrator (Tidak dapat menghapus akun sendiri)
 * **Respon Sukses `204 No Content`**
@@ -520,7 +506,7 @@ curl -s -f http://localhost:8000/api/v1 | grep '"status":"ok"'
 # 2. Login User
 LOGIN_RES=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"id":"rina","password":"rina12345"}')
+  -d '{"id":"forafa","password":"forafa123"}')
 TOKEN=$(echo $LOGIN_RES | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
 
 # 3. Akses Protected Endpoint dengan Bearer Token

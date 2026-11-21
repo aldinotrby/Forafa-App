@@ -208,9 +208,11 @@ Mendapatkan identitas pengguna pemilik token JWT aktif.
     "username": "budi_rw",
     "email": "budi@rw05.id",
     "password": "budi12345",
-    "role": "User"
+    "role": "User",
+    "email_verification_token": "token-dari-otp"
   }
   ```
+* **Catatan**: bila SMTP dikonfigurasi, `email_verification_token` (token sekali pakai dari `POST /auth/email-otp/verify` untuk email calon pengguna) wajib disertakan — tanpa token, endpoint mengembalikan `422`. Bila SMTP belum dikonfigurasi, token tidak diperlukan.
 * **Respon Sukses `201 Created`**: Objek data user baru.
 
 ### 3.3 Detail Pengguna Berdasarkan ID
@@ -230,23 +232,7 @@ Mendapatkan identitas pengguna pemilik token JWT aktif.
   ```
 * **Respon Sukses `200 OK`**: Objek pengguna yang telah diperbarui.
 
-### 3.5 Reset Password Pengguna (Admin)
-* **Metode & Endpoint**: `POST /api/v1/users/{id}/reset-password`
-* **Akses**: Khusus Administrator
-* **Request Payload**:
-  ```json
-  {
-    "new_password": "passwordBaru123"
-  }
-  ```
-* **Respon Sukses `200 OK`**:
-  ```json
-  {
-    "message": "Password pengguna berhasil diperbarui."
-  }
-  ```
-
-### 3.6 Hapus Pengguna (Admin)
+### 3.5 Hapus Pengguna (Admin)
 * **Metode & Endpoint**: `DELETE /api/v1/users/{id}`
 * **Akses**: Khusus Administrator (Tidak dapat menghapus akun sendiri)
 * **Respon Sukses `204 No Content`**

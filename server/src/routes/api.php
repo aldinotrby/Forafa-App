@@ -49,7 +49,6 @@ function registerApiRoutes(Router $router): void {
         $router->post("{$p}/users", [UserController::class, 'create']);
         $router->get("{$p}/users/{id}", [UserController::class, 'getDetail']);
         $router->patch("{$p}/users/{id}", [UserController::class, 'update']);
-        $router->post("{$p}/users/{id}/reset-password", [UserController::class, 'resetPassword']);
         $router->delete("{$p}/users/{id}", [UserController::class, 'delete']);
 
         // --------------------------------------------------------------------------

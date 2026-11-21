@@ -228,12 +228,7 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
 * **Request Body**: `username`?, `email`?, `role`?, `password`?
 * **Response `200 OK`**: Objek pengguna terupdate.
 
-### 3.5 Reset Password (Admin Only)
-* **Method & URL**: `POST /api/v1/users/{id}/reset-password`
-* **Request Body**: `{"new_password": "..."}`
-* **Response `200 OK`**: Pesan konfirmasi sukses.
-
-### 3.6 Hapus Pengguna (Admin Only)
+### 3.5 Hapus Pengguna (Admin Only)
 * **Method & URL**: `DELETE /api/v1/users/{id}`
 * **Response `204 No Content`**
 

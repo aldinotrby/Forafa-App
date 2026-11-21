@@ -19,6 +19,19 @@ const STATUS_STYLE: Record<Status, string> = {
 export const publicUrl = (slug: string) => `${location.origin}${location.pathname}#/p/${slug}`
 export const fmtDate = (iso: string) => new Date(iso).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
+/**
+ * Sensor nama untuk tampilan admin (privasi): tiap kata hanya huruf
+ * pertama & terakhir yang terlihat, sisanya bintang — "Rina" → "R**a",
+ * "Budi Santoso" → "B**i S*****o". Kata 1 huruf dibiarkan, 2 huruf
+ * jadi huruf pertama + bintang. Dipakai di aktivitas terbaru,
+ * notifikasi, dan tampilan "sebagai pengguna" di dashboard admin.
+ */
+export const maskName = (name: string): string =>
+  name
+    .split(' ')
+    .map((w) => (w.length <= 1 ? w : w.length === 2 ? `${w[0]}*` : `${w[0]}${'*'.repeat(w.length - 2)}${w[w.length - 1]}`))
+    .join(' ')
+
 export function Logo({ size = 36 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden>

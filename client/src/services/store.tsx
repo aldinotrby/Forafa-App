@@ -162,9 +162,8 @@ interface Store {
    * Akun email wajib menyertakan password saat ini sebagai konfirmasi.
    */
   deleteOwnAccount: (password?: string) => string | null
-  adminCreateUser: (u: { username: string; email: string; password: string }) => string | null
+  adminCreateUser: (u: { username: string; email: string; password: string; verificationToken?: string }) => string | null
   updateUser: (id: string, patch: { username?: string; email?: string; avatar?: string }) => string | null
-  resetUserPassword: (id: string, newPassword: string) => string | null
   removeUser: (id: string) => void
   addInteraction: (i: Omit<Interaction, 'id' | 'ownerId' | 'slug' | 'createdAt'>, ownerIdOverride?: string) => Interaction
   updateInteraction: (id: string, patch: Partial<Interaction>) => void
@@ -775,7 +774,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
         return null
       },
-      adminCreateUser: ({ username, email, password }) => {
+      adminCreateUser: ({ username, email, password, verificationToken }) => {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
         if (!/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
         if (!checkPasswordRequirements(password).valid) return PASSWORD_REQUIREMENTS_MESSAGE
@@ -783,10 +782,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const u = { id: uid(), username, email, role: 'User' as Role, password, provider: 'password' as AuthProvider }
         setUsers((p) => [...p, u])
 
-        // Asynchronously persist in backend
-        apiCall('/users', {
+        // Simpan ke backend (token verifikasi email diteruskan supaya
+        // backend bisa memastikan email calon pengguna sudah terverifikasi).
+        // Bila berhasil, pakai id backend untuk pengguna ini supaya edit
+        // dan hapus berikutnya mengenai record yang sama — id lokal acak
+        // tidak ada di backend, jadi tanpa ini edit/hapus hanya jalan
+        // lokal (backend mengembalikan 404 yang selama ini diam-diam
+        // diabaikan).
+        void apiCall('/users', {
           method: 'POST',
-          body: JSON.stringify({ username, email, password, role: 'User' }),
+          body: JSON.stringify({
+            username,
+            email,
+            password,
+            role: 'User',
+            ...(verificationToken ? { email_verification_token: verificationToken } : {}),
+          }),
+        }).then(async (res) => {
+          if (!res || !res.ok) return
+          try {
+            const data = (await res.json()) as { id?: unknown }
+            if (typeof data.id === 'string' && data.id !== u.id) {
+              setUsers((p) => p.map((x) => (x.id === u.id ? { ...x, id: data.id as string } : x)))
+            }
+          } catch {
+            // Abaikan — pengguna tetap bisa dipakai secara lokal.
+          }
         })
 
         return null
@@ -802,18 +823,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         apiCall(`/users/${id}`, {
           method: 'PATCH',
           body: JSON.stringify(patch),
-        })
-
-        return null
-      },
-      resetUserPassword: (id, newPassword) => {
-        if (!checkPasswordRequirements(newPassword).valid) return PASSWORD_REQUIREMENTS_MESSAGE
-        setUsers((p) => p.map((u) => (u.id === id ? { ...u, password: newPassword } : u)))
-
-        // Asynchronously reset password in backend
-        apiCall(`/users/${id}/reset-password`, {
-          method: 'POST',
-          body: JSON.stringify({ new_password: newPassword }),
         })
 
         return null

@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useStore, type Response, type User, type Kind } from '../services/store'
+import { requestEmailOtp, verifyEmailOtp } from '../services/emailOtpService'
 import { loadSeenResponseIds, markResponseSeen, markResponsesSeen } from '../services/ownerNotifications'
 import UserWorkspace from './UserWorkspace'
 import Profile from './Profile'
 import { MediaUpload } from '../components/MediaUpload'
 import { SessionStatus } from '../components/SessionStatus'
-import { Btn, Card, Field, KIND, Logo, PasswordInput, PasswordStrengthMeter, fmtDate, inputCls } from '../components/ui'
+import { Btn, Card, Field, KIND, Logo, PasswordInput, PasswordStrengthMeter, fmtDate, inputCls, maskName } from '../components/ui'
 
 type AdminNav = 'overview' | 'users' | 'notif' | 'profil'
 
@@ -42,7 +43,7 @@ export default function AdminDashboard() {
         asUserId={viewingUser.id}
         initialOpenId={viewingOpenId ?? undefined}
         onBack={() => { setViewingUser(null); setViewingOpenId(null) }}
-        adminBanner={viewingUser.username}
+        adminBanner={maskName(viewingUser.username)}
       />
     )
   }
@@ -163,11 +164,11 @@ function AdminOverview({ onViewUser, seenIds }: { onViewUser: (u: User) => void;
                     <span className={`size-2.5 shrink-0 rounded-full ${kindDot[it.kind]}`} />
                     {!seenIds.includes(r.id) && <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">BARU</span>}
                     <span className="min-w-0 flex-1 truncate">
-                      <b>{r.name ?? 'Anonim'}</b>{' '}
+                      <b>{r.name ? maskName(r.name) : 'Anonim'}</b>{' '}
                       {r.choice ? `memilih "${r.choice}"` : r.message ? `"${r.message.slice(0, 50)}${r.message.length > 50 ? '…' : ''}"` : ''}
                     </span>
                     <span className="shrink-0 rounded-full bg-ground px-2 py-0.5 text-xs font-semibold text-mute">
-                      {owner?.username}
+                      {owner ? maskName(owner.username) : '—'}
                     </span>
                     <time className="shrink-0 text-xs text-mute">{fmtDate(r.at)}</time>
                   </li>
@@ -213,8 +214,8 @@ function AdminOverview({ onViewUser, seenIds }: { onViewUser: (u: User) => void;
 }
 
 function AdminUsers({ onViewUser, seenIds }: { onViewUser: (u: User) => void; seenIds: string[] }) {
-  const { users, interactions, responses, adminCreateUser, updateUser, resetUserPassword, removeUser } = useStore()
-  const [modal, setModal] = useState<null | { type: 'create' } | { type: 'edit'; user: User } | { type: 'reset'; user: User }>(null)
+  const { users, interactions, responses, adminCreateUser, updateUser, removeUser } = useStore()
+  const [modal, setModal] = useState<null | { type: 'create' } | { type: 'edit'; user: User }>(null)
   const [q, setQ] = useState('')
 
   const regularUsers = users.filter((u) => u.role === 'User')
@@ -295,9 +296,6 @@ function AdminUsers({ onViewUser, seenIds }: { onViewUser: (u: User) => void; se
                       <Btn variant="ghost" className="px-2.5 py-1 text-xs" onClick={() => setModal({ type: 'edit', user: u })}>
                         Edit
                       </Btn>
-                      <Btn variant="ghost" className="px-2.5 py-1 text-xs" onClick={() => setModal({ type: 'reset', user: u })}>
-                        Reset Password
-                      </Btn>
                       <Btn variant="danger" className="px-2.5 py-1 text-xs" onClick={() => {
                         if (confirm(`Hapus akun "${u.username}" beserta semua interaksi dan responsnya?`)) removeUser(u.id)
                       }}>
@@ -330,13 +328,6 @@ function AdminUsers({ onViewUser, seenIds }: { onViewUser: (u: User) => void; se
           user={modal.user}
           onClose={() => setModal(null)}
           onSave={(patch) => { const err = updateUser(modal.user.id, patch); if (!err) setModal(null); return err }}
-        />
-      )}
-      {modal?.type === 'reset' && (
-        <ResetPasswordModal
-          user={modal.user}
-          onClose={() => setModal(null)}
-          onSave={(pw) => { const err = resetUserPassword(modal.user.id, pw); if (!err) setModal(null); return err }}
         />
       )}
     </div>
@@ -460,11 +451,11 @@ function AdminNotifications({ unseen, onOpenResponse, onMarkAll }: {
                 <span className={`size-2.5 shrink-0 rounded-full ${kindDot[it.kind]}`} aria-hidden />
                 {isNew && <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">BARU</span>}
                 <span className="min-w-0 flex-1 truncate">
-                  <b>{r.name ?? 'Anonim'}</b>{' '}
+                  <b>{r.name ? maskName(r.name) : 'Anonim'}</b>{' '}
                   {r.choice ? `memilih ${r.choice}` : r.message ? `menulis: ${r.message}` : ''}
                 </span>
                 <span className="shrink-0 rounded-full bg-ground px-2 py-0.5 text-xs font-semibold text-mute">
-                  {owner?.username ?? '—'}
+                  {owner ? maskName(owner.username) : '—'}
                 </span>
                 <button className="shrink-0 text-xs font-semibold text-brand hover:underline" onClick={() => onOpenResponse(r)}>{it.title}</button>
                 <time className="shrink-0 text-xs text-mute">{fmtDate(r.at)}</time>
@@ -499,36 +490,126 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
   )
 }
 
-function CreateUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: { username: string; email: string; password: string }) => string | null }) {
+function CreateUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: { username: string; email: string; password: string; verificationToken?: string }) => string | null }) {
   const [f, setF] = useState({ username: '', email: '', password: '' })
   const [err, setErr] = useState<string | null>(null)
   const [showPw, setShowPw] = useState(false)
+  // Langkah 2: verifikasi email calon pengguna dengan kode OTP 5 digit
+  // (sama seperti pendaftaran) — memastikan email yang didaftarkan asli
+  // dan aktif sebelum akun dibuat.
+  const [step, setStep] = useState<'form' | 'otp'>('form')
+  const [code, setCode] = useState('')
+  const [otpErr, setOtpErr] = useState<string | null>(null)
+  const [otpBusy, setOtpBusy] = useState(false)
+  const [resendIn, setResendIn] = useState(0)
+  const [expiresIn, setExpiresIn] = useState(0)
 
-  const submit = (e: React.FormEvent) => {
+  // Hitung mundur kirim ulang + kedaluwarsa kode.
+  useEffect(() => {
+    if (resendIn <= 0 && expiresIn <= 0) return
+    const t = setInterval(() => {
+      setResendIn((v) => Math.max(0, v - 1))
+      setExpiresIn((v) => Math.max(0, v - 1))
+    }, 1000)
+    return () => clearInterval(t)
+  }, [resendIn > 0, expiresIn > 0])
+
+  const sendCode = async () => {
+    setOtpBusy(true)
+    setOtpErr(null)
+    const res = await requestEmailOtp(f.email)
+    setOtpBusy(false)
+    if (!res.ok) {
+      setOtpErr(res.error ?? 'Gagal mengirim kode.')
+      return
+    }
+    setResendIn(res.resendAfterSeconds ?? 60)
+    setExpiresIn(res.expiresInSeconds ?? 600)
+    setStep('otp')
+  }
+
+  const submitForm = (e: React.FormEvent) => {
     e.preventDefault()
-    const result = onSave(f)
+    setErr(null)
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) {
+      setErr('Format email tidak valid.')
+      return
+    }
+    void sendCode()
+  }
+
+  const submitOtp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (code.trim().length !== 5) {
+      setOtpErr('Masukkan kode 5 digit yang dikirim ke email calon pengguna.')
+      return
+    }
+    setOtpBusy(true)
+    setOtpErr(null)
+    const res = await verifyEmailOtp(f.email, code.trim())
+    setOtpBusy(false)
+    if (!res.ok || !res.verificationToken) {
+      setOtpErr(res.error ?? 'Verifikasi gagal.')
+      return
+    }
+    const result = onSave({ ...f, verificationToken: res.verificationToken })
     if (result) setErr(result)
   }
 
   return (
     <Modal title="Tambah Pengguna Baru" onClose={onClose}>
-      <form onSubmit={submit} className="space-y-4">
-        <Field label="Username">
-          <input className={inputCls} value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} placeholder="username_baru" required />
-        </Field>
-        <Field label="Email">
-          <input type="email" className={inputCls} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} placeholder="email@contoh.com" required />
-        </Field>
-        <Field label="Password" hint="Minimal 8 karakter, 1 huruf kapital, 1 angka, dan 1 simbol.">
-          <PasswordInput value={f.password} onChange={(v) => setF({ ...f, password: v })} autoComplete="new-password" show={showPw} onToggleShow={() => setShowPw((v) => !v)} required />
-        </Field>
-        {f.password.length > 0 && <PasswordStrengthMeter password={f.password} />}
-        {err && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
-        <div className="flex justify-end gap-2 pt-1">
-          <Btn type="button" variant="ghost" onClick={onClose}>Batal</Btn>
-          <Btn>Buat Akun</Btn>
-        </div>
-      </form>
+      {step === 'form' ? (
+        <form onSubmit={submitForm} className="space-y-4">
+          <Field label="Username">
+            <input className={inputCls} value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} placeholder="username_baru" required />
+          </Field>
+          <Field label="Email">
+            <input type="email" className={inputCls} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} placeholder="email@contoh.com" required />
+          </Field>
+          <Field label="Password" hint="Minimal 8 karakter, 1 huruf kapital, 1 angka, dan 1 simbol.">
+            <PasswordInput value={f.password} onChange={(v) => setF({ ...f, password: v })} autoComplete="new-password" show={showPw} onToggleShow={() => setShowPw((v) => !v)} required />
+          </Field>
+          {f.password.length > 0 && <PasswordStrengthMeter password={f.password} />}
+          {err && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+          {otpErr && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{otpErr}</p>}
+          <p className="rounded-lg bg-brand-soft px-3 py-2 text-xs leading-relaxed text-brand">
+            Setelah klik "Kirim kode verifikasi", kode 5 digit dikirim ke email calon pengguna — minta kodenya untuk melanjutkan. Ini memastikan email yang didaftarkan asli dan aktif.
+          </p>
+          <div className="flex justify-end gap-2 pt-1">
+            <Btn type="button" variant="ghost" onClick={onClose}>Batal</Btn>
+            <Btn disabled={otpBusy}>{otpBusy ? 'Mengirim…' : 'Kirim kode verifikasi'}</Btn>
+          </div>
+        </form>
+      ) : (
+        <form onSubmit={submitOtp} className="space-y-4">
+          <p className="text-sm leading-relaxed text-mute">
+            Kode verifikasi 5 digit dikirim ke <b className="text-ink">{f.email}</b>. Minta kode tersebut dari calon pengguna, lalu masukkan di bawah
+            {expiresIn > 0 ? ` (berlaku ${Math.floor(expiresIn / 60)}:${String(expiresIn % 60).padStart(2, '0')})` : ''}.
+          </p>
+          <Field label="Kode verifikasi">
+            <input
+              className={inputCls}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
+              placeholder="12345"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              required
+            />
+          </Field>
+          {otpErr && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{otpErr}</p>}
+          {err && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <div className="flex gap-2">
+              <Btn type="button" variant="ghost" onClick={() => { setStep('form'); setOtpErr(null); setCode('') }}>← Ubah email</Btn>
+              <Btn type="button" variant="ghost" disabled={resendIn > 0 || otpBusy} onClick={() => void sendCode()}>
+                {resendIn > 0 ? `Kirim ulang (${resendIn}d)` : 'Kirim ulang kode'}
+              </Btn>
+            </div>
+            <Btn disabled={otpBusy}>{otpBusy ? 'Memeriksa…' : 'Verifikasi & Buat Akun'}</Btn>
+          </div>
+        </form>
+      )}
     </Modal>
   )
 }
@@ -573,35 +654,3 @@ function EditUserModal({ user, onClose, onSave }: { user: User; onClose: () => v
   )
 }
 
-function ResetPasswordModal({ user, onClose, onSave }: { user: User; onClose: () => void; onSave: (pw: string) => string | null }) {
-  const [pw, setPw] = useState('')
-  const [pw2, setPw2] = useState('')
-  const [err, setErr] = useState<string | null>(null)
-  const [showPw, setShowPw] = useState(false)
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (pw !== pw2) { setErr('Konfirmasi password tidak cocok.'); return }
-    const result = onSave(pw)
-    if (result) setErr(result)
-  }
-
-  return (
-    <Modal title={`Reset Password: ${user.username}`} onClose={onClose}>
-      <form onSubmit={submit} className="space-y-4">
-        <Field label="Password Baru" hint="Minimal 8 karakter, 1 huruf kapital, 1 angka, dan 1 simbol.">
-          <PasswordInput value={pw} onChange={setPw} autoComplete="new-password" show={showPw} onToggleShow={() => setShowPw((v) => !v)} required />
-        </Field>
-        {pw.length > 0 && <PasswordStrengthMeter password={pw} />}
-        <Field label="Konfirmasi Password Baru">
-          <PasswordInput value={pw2} onChange={setPw2} autoComplete="new-password" show={showPw} onToggleShow={() => setShowPw((v) => !v)} required />
-        </Field>
-        {err && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
-        <div className="flex justify-end gap-2 pt-1">
-          <Btn type="button" variant="ghost" onClick={onClose}>Batal</Btn>
-          <Btn>Simpan Password Baru</Btn>
-        </div>
-      </form>
-    </Modal>
-  )
-}

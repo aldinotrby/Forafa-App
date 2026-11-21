@@ -60,6 +60,7 @@ class UserController {
         $email = trim($input['email'] ?? '');
         $password = $input['password'] ?? '';
         $role = $input['role'] ?? 'User';
+        $verificationToken = trim((string)($input['email_verification_token'] ?? ''));
 
         if (!preg_match('/^[a-zA-Z0-9_]{3,20}$/', $username)) {
             ApiResponse::error("Username harus berupa 3-20 karakter alfanumerik atau underscore.", 422);
@@ -76,6 +77,19 @@ class UserController {
         }
 
         $db = Database::getConnection();
+
+        // Verifikasi email wajib bila SMTP dikonfigurasi (sama seperti
+        // pendaftaran): admin harus membuktikan kepemilikan email calon
+        // pengguna dengan kode OTP 5 digit — token sekali pakai itu
+        // dihanguskan di sini, jadi satu token hanya bisa dipakai satu kali.
+        $config = require __DIR__ . '/../config/config.php';
+        $mailConfigured = EmailOtp::isMailConfigured($config);
+        if ($mailConfigured && $verificationToken === '') {
+            ApiResponse::error('Verifikasi email wajib: minta kode 5 digit ke email calon pengguna, lalu verifikasi dulu sebelum membuat akun.', 422);
+        }
+        if ($verificationToken !== '' && !EmailOtp::consumeToken($db, $email, $verificationToken)) {
+            ApiResponse::error('Kode verifikasi tidak valid, sudah dipakai, atau sudah kedaluwarsa. Minta kode baru.', 422);
+        }
 
         if (User::findByEmail($db, $email)) {
             ApiResponse::error("Email sudah terdaftar.", 400);
@@ -126,7 +140,8 @@ class UserController {
      * email baru, bila SMTP dikonfigurasi (tanpa SMTP, pendaftaran pun
      * tidak bisa jalan lewat frontend, jadi jalur lama tetap dibuka).
      * Ganti password oleh pemilik akun wajib menyertakan password lama
-     * (`current_password`); admin memakai endpoint reset-password.
+     * (`current_password`). Admin tidak bisa mengubah password pengguna
+     * lain — fitur reset password sudah dihapus.
      */
     public static function update(string $id): void {
         $currentUser = AuthMiddleware::authenticate();
@@ -228,51 +243,26 @@ class UserController {
         }
 
         if (!empty($input['password'])) {
+            // Ganti password lewat jalur ini hanya untuk pemilik akun
+            // sendiri (wajib password lama). Fitur reset password oleh
+            // admin sudah dihapus — admin tidak bisa mengatur password
+            // pengguna lain.
+            if (!$isSelf) {
+                ApiResponse::error('Admin tidak bisa mengubah password pengguna lain. Fitur reset password sudah dihapus.', 403);
+            }
             // Syarat password baru sama seperti pendaftaran & ganti password.
             if (strlen($input['password']) < 8 || !preg_match('/[A-Z]/', $input['password']) || !preg_match('/[0-9]/', $input['password']) || !preg_match('/[^A-Za-z0-9]/', $input['password'])) {
                 ApiResponse::error("Password minimal 8 karakter dan harus mengandung minimal 1 huruf kapital, 1 angka, dan 1 simbol.", 422);
             }
-            // Pemilik akun wajib membuktikan password lama; admin tidak
-            // lewat jalur ini (pakai POST /users/{id}/reset-password).
-            if ($isSelf && !$isAdmin) {
-                $current = (string)($input['current_password'] ?? '');
-                if ($current === '' || !password_verify($current, (string)$user['password_hash'])) {
-                    ApiResponse::error('Password lama salah.', 400);
-                }
+            $current = (string)($input['current_password'] ?? '');
+            if ($current === '' || !password_verify($current, (string)$user['password_hash'])) {
+                ApiResponse::error('Password lama salah.', 400);
             }
             $updateData['password'] = $input['password'];
         }
 
         $updated = User::update($db, $id, $updateData);
         ApiResponse::json($updated, 200);
-    }
-
-    /**
-     * POST /users/{id}/reset-password (Admin Only)
-     */
-    public static function resetPassword(string $id): void {
-        AuthMiddleware::requireAdmin();
-
-        $input = json_decode(file_get_contents('php://input'), true) ?: [];
-        $newPassword = $input['new_password'] ?? '';
-
-        // Syarat password baru sama seperti pendaftaran & ganti password.
-        if (strlen($newPassword) < 8 || !preg_match('/[A-Z]/', $newPassword) || !preg_match('/[0-9]/', $newPassword) || !preg_match('/[^A-Za-z0-9]/', $newPassword)) {
-            ApiResponse::error("Password baru minimal 8 karakter dan harus mengandung minimal 1 huruf kapital, 1 angka, dan 1 simbol.", 422);
-        }
-
-        $db = Database::getConnection();
-        $user = User::findById($db, $id);
-
-        if (!$user) {
-            ApiResponse::error("Pengguna tidak ditemukan.", 404);
-        }
-
-        User::update($db, $id, ['password' => $newPassword]);
-
-        ApiResponse::json([
-            'message' => "Password pengguna '{$user['username']}' berhasil direset.",
-        ], 200);
     }
 
     /**

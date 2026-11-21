@@ -5,7 +5,7 @@ import UserWorkspace from './UserWorkspace'
 import Profile from './Profile'
 import { MediaUpload } from '../components/MediaUpload'
 import { SessionStatus } from '../components/SessionStatus'
-import { Btn, Card, Field, KIND, Logo, fmtDate, inputCls } from '../components/ui'
+import { Btn, Card, Field, KIND, Logo, PasswordInput, PasswordStrengthMeter, fmtDate, inputCls } from '../components/ui'
 
 type AdminNav = 'overview' | 'users' | 'notif' | 'profil'
 
@@ -502,6 +502,7 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
 function CreateUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u: { username: string; email: string; password: string }) => string | null }) {
   const [f, setF] = useState({ username: '', email: '', password: '' })
   const [err, setErr] = useState<string | null>(null)
+  const [showPw, setShowPw] = useState(false)
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -518,9 +519,10 @@ function CreateUserModal({ onClose, onSave }: { onClose: () => void; onSave: (u:
         <Field label="Email">
           <input type="email" className={inputCls} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} placeholder="email@contoh.com" required />
         </Field>
-        <Field label="Password" hint="Minimal 8 karakter.">
-          <input type="password" className={inputCls} value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} required />
+        <Field label="Password" hint="Minimal 8 karakter, 1 huruf kapital, 1 angka, dan 1 simbol.">
+          <PasswordInput value={f.password} onChange={(v) => setF({ ...f, password: v })} autoComplete="new-password" show={showPw} onToggleShow={() => setShowPw((v) => !v)} required />
         </Field>
+        {f.password.length > 0 && <PasswordStrengthMeter password={f.password} />}
         {err && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
         <div className="flex justify-end gap-2 pt-1">
           <Btn type="button" variant="ghost" onClick={onClose}>Batal</Btn>
@@ -575,6 +577,7 @@ function ResetPasswordModal({ user, onClose, onSave }: { user: User; onClose: ()
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
   const [err, setErr] = useState<string | null>(null)
+  const [showPw, setShowPw] = useState(false)
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -586,11 +589,12 @@ function ResetPasswordModal({ user, onClose, onSave }: { user: User; onClose: ()
   return (
     <Modal title={`Reset Password: ${user.username}`} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Password Baru" hint="Minimal 8 karakter.">
-          <input type="password" className={inputCls} value={pw} onChange={(e) => setPw(e.target.value)} required />
+        <Field label="Password Baru" hint="Minimal 8 karakter, 1 huruf kapital, 1 angka, dan 1 simbol.">
+          <PasswordInput value={pw} onChange={setPw} autoComplete="new-password" show={showPw} onToggleShow={() => setShowPw((v) => !v)} required />
         </Field>
+        {pw.length > 0 && <PasswordStrengthMeter password={pw} />}
         <Field label="Konfirmasi Password Baru">
-          <input type="password" className={inputCls} value={pw2} onChange={(e) => setPw2(e.target.value)} required />
+          <PasswordInput value={pw2} onChange={setPw2} autoComplete="new-password" show={showPw} onToggleShow={() => setShowPw((v) => !v)} required />
         </Field>
         {err && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
         <div className="flex justify-end gap-2 pt-1">

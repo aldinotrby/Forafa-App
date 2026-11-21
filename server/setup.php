@@ -73,7 +73,7 @@ try {
     output("", $isCli);
     output("Akun bawaan yang tersedia:", $isCli);
     output(" - Administrator : admin / admin12345 (admin@forafa.app)", $isCli);
-    output(" - User 1        : rina / rina12345 (rina@desa-mekar.id)", $isCli);
+    output(" - User 1        : forafa / forafa123 (rina@desa-mekar.id)", $isCli);
     output(" - User 2        : budi_rw / budi12345 (budi@rw05.id)", $isCli);
     output("--------------------------------------------------", $isCli);
 

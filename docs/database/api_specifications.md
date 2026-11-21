@@ -107,7 +107,7 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
     "token_type": "bearer",
     "user": {
       "id": "u2",
-      "username": "rina",
+      "username": "forafa",
       "email": "rina@desa-mekar.id",
       "role": "User",
       "created_at": "2026-10-07T07:45:00Z"
@@ -168,7 +168,7 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
     "message": "Session aktif dan valid.",
     "user": {
       "id": "u2",
-      "username": "rina",
+      "username": "forafa",
       "email": "rina@desa-mekar.id",
       "role": "User",
       "created_at": "2026-10-07T07:45:00Z"
@@ -198,7 +198,7 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
   ```json
   {
     "id": "u2",
-    "username": "rina",
+    "username": "forafa",
     "email": "rina@desa-mekar.id",
     "role": "User",
     "created_at": "2026-10-07T07:45:00Z"

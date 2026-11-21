@@ -183,7 +183,7 @@ const day = (d: number) => new Date(Date.now() + d * 86400_000).toISOString().sl
 
 const seedUsers: (User & { password: string })[] = [
   { id: 'u1', username: 'admin', email: 'admin@forafa.app', role: 'Administrator', password: 'admin12345', provider: 'password' },
-  { id: 'u2', username: 'rina', email: 'rina@desa-mekar.id', role: 'User', password: 'rina12345', provider: 'password' },
+  { id: 'u2', username: 'forafa', email: 'rina@desa-mekar.id', role: 'User', password: 'forafa123', provider: 'password' },
   { id: 'u3', username: 'budi_rw', email: 'budi@rw05.id', role: 'User', password: 'budi12345', provider: 'password' },
 ]
 

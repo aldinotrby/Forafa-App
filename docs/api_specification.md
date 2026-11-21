@@ -117,8 +117,8 @@ Autentikasi akun menggunakan username atau email.
 * **Request Payload**:
   ```json
   {
-    "id": "rina",
-    "password": "rina12345"
+    "id": "forafa",
+    "password": "forafa123"
   }
   ```
 * **Respon Sukses `200 OK`**:
@@ -128,7 +128,7 @@ Autentikasi akun menggunakan username atau email.
     "token_type": "bearer",
     "user": {
       "id": "u2",
-      "username": "rina",
+      "username": "forafa",
       "email": "rina@desa-mekar.id",
       "role": "User",
       "created_at": "2026-10-13T12:00:00Z"
@@ -158,7 +158,7 @@ Mendapatkan identitas pengguna pemilik token JWT aktif.
   ```json
   {
     "id": "u2",
-    "username": "rina",
+    "username": "forafa",
     "email": "rina@desa-mekar.id",
     "role": "User",
     "created_at": "2026-10-13T12:00:00Z"
@@ -191,7 +191,7 @@ Mendapatkan identitas pengguna pemilik token JWT aktif.
     },
     {
       "id": "u2",
-      "username": "rina",
+      "username": "forafa",
       "email": "rina@desa-mekar.id",
       "role": "User",
       "created_at": "2026-09-10T00:00:00Z"
@@ -520,7 +520,7 @@ curl -s -f http://localhost:8000/api/v1 | grep '"status":"ok"'
 # 2. Login User
 LOGIN_RES=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"id":"rina","password":"rina12345"}')
+  -d '{"id":"forafa","password":"forafa123"}')
 TOKEN=$(echo $LOGIN_RES | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
 
 # 3. Akses Protected Endpoint dengan Bearer Token

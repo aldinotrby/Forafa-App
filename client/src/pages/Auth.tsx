@@ -224,7 +224,7 @@ export default function Auth() {
             <>
               {mode === 'login' ? (
                 <Field label="Email atau username">
-                  <input className={inputCls} value={f.id} onChange={(e) => set('id', e.target.value)} placeholder="rina" required />
+                  <input className={inputCls} value={f.id} onChange={(e) => set('id', e.target.value)} placeholder="forafa" required />
                 </Field>
               ) : (
                 <>
@@ -284,7 +284,7 @@ export default function Auth() {
           </div>
           {mode === 'login' && (
             <p className="rounded-lg bg-brand-soft px-3 py-2 text-xs text-brand">
-              Demo User: <b>rina</b> / rina12345 &nbsp;·&nbsp; Admin: <b>admin</b> / admin12345
+              Demo User: <b>forafa</b> / forafa123 &nbsp;·&nbsp; Admin: <b>admin</b> / admin12345
             </p>
           )}
 

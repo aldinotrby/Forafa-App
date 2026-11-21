@@ -183,10 +183,10 @@ CREATE TABLE `voting_answers` (
 -- SEED DATA
 -- ------------------------------------------------------------------------------
 
--- Seed Users (Passwords: admin12345, rina12345, budi12345)
+-- Seed Users (Passwords: admin12345, forafa123, budi12345)
 INSERT INTO `users` (`id`, `username`, `email`, `password_hash`, `role`, `created_at`) VALUES
 ('u1', 'admin', 'admin@forafa.app', '$2y$10$jDdwQk2WUnbUM5XFJCQoB./vsH9.F7yOQnVCw.xKyB0vjKNvnJhce', 'Administrator', NOW() - INTERVAL 40 DAY),
-('u2', 'rina', 'rina@desa-mekar.id', '$2y$10$lltfLgnPLT4jc1NswDoLyedNK9OVsdLj0x7/gIPRqNFl5y2EFNNQC', 'User', NOW() - INTERVAL 33 DAY),
+('u2', 'forafa', 'rina@desa-mekar.id', '$2y$10$VqdpHBQQtsmxuT3D4Vv4C.quHuFIKvy66azOjkDe/wGUTmbzRywNC', 'User', NOW() - INTERVAL 33 DAY),
 ('u3', 'budi_rw', 'budi@rw05.id', '$2y$10$VqqUhYBx1T4VgjY/VFK25e8OBpWVsv17383couDyfUJK2sANEqQDK', 'User', NOW() - INTERVAL 25 DAY);
 
 -- Seed Interactions

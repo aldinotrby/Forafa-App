@@ -45,8 +45,10 @@ class AuthController {
             ApiResponse::error("Format email tidak valid.", 422);
         }
 
-        if (strlen($password) < 8) {
-            ApiResponse::error("Password minimal 8 karakter.", 422);
+        // Syarat password pendaftaran: minimal 8 karakter, 1 huruf kapital,
+        // 1 angka, dan 1 simbol (sama seperti form daftar & store).
+        if (strlen($password) < 8 || !preg_match('/[A-Z]/', $password) || !preg_match('/[0-9]/', $password) || !preg_match('/[^A-Za-z0-9]/', $password)) {
+            ApiResponse::error("Password minimal 8 karakter dan harus mengandung minimal 1 huruf kapital, 1 angka, dan 1 simbol.", 422);
         }
 
         $db = Database::getConnection();

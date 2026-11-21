@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { disableGoogleAutoSelect, type GoogleProfile } from './googleAuth'
 import { BIO_MAX_LENGTH, PROFILE_CHANGE_COOLDOWN_MS, bioLength } from './profile'
+import { checkPasswordRequirements, PASSWORD_REQUIREMENTS_MESSAGE } from './passwordStrength'
 
 export type Kind = 'vote' | 'feedback' | 'anon'
 export type Status = 'Baru' | 'Dibaca' | 'Diproses' | 'Selesai'
@@ -623,7 +624,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       register: ({ username, email, password, verificationToken }) => {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
         if (!/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
-        if (password.length < 8) return 'Password minimal 8 karakter.'
+        if (!checkPasswordRequirements(password).valid) return PASSWORD_REQUIREMENTS_MESSAGE
         // Pendaftaran email wajib lewat verifikasi OTP: token sekali pakai
         // dari POST /auth/email-otp/verify (kode 5 digit dari
         // forafagroup@gmail.com). Tanpa token, akun tidak dibuat — tidak
@@ -777,7 +778,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       adminCreateUser: ({ username, email, password }) => {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
         if (!/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
-        if (password.length < 8) return 'Password minimal 8 karakter.'
+        if (!checkPasswordRequirements(password).valid) return PASSWORD_REQUIREMENTS_MESSAGE
         if (users.some((u) => u.email === email || u.username.toLowerCase() === username.toLowerCase())) return 'Email atau username sudah terdaftar.'
         const u = { id: uid(), username, email, role: 'User' as Role, password, provider: 'password' as AuthProvider }
         setUsers((p) => [...p, u])

@@ -182,7 +182,7 @@ jobs:
           echo "🔐 Testing Auth Login API Contract..."
           LOGIN_RES=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
             -H "Content-Type: application/json" \
-            -d '{"id":"rina","password":"rina12345"}')
+            -d '{"id":"forafa","password":"forafa123"}')
           
           echo "Login Response: $LOGIN_RES"
           TOKEN=$(echo "$LOGIN_RES" | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
@@ -196,7 +196,7 @@ jobs:
           echo "👤 Testing Protected /api/v1/auth/me..."
           ME_RES=$(curl -s -f -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/v1/auth/me)
           echo "Auth me response: $ME_RES"
-          echo "$ME_RES" | grep '"username":"rina"'
+          echo "$ME_RES" | grep '"username":"forafa"'
 
           echo "🗳️ Testing Public Visitor Endpoint /api/v1/public/taman-rw05..."
           PUB_RES=$(curl -s -f http://127.0.0.1:8000/api/v1/public/taman-rw05)

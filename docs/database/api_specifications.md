@@ -469,18 +469,41 @@ Modul ini mengimplementasikan pemisahan fisik antara **Data Jawaban Voting** (ta
 * **Response `201 Created` (Jika Sukses & Valid)**:
   ```json
   {
-    "id": "r_9988aabb",
-    "interaction_id": "i4",
-    "name": "Budi Santoso",
-    "is_anonymous": false,
-    "choice": "Ketua: Pak Suryo, Wakil: Bu Ratna, Sekretaris: Bu Ani, Bendahara: Bu Dewi",
-    "status": "Baru",
-    "answers": [
-      { "question_id": "vq_1", "role_key": "ketua", "role_label": "Ketua", "choice": "Pak Suryo" },
-      { "question_id": "vq_2", "role_key": "wakil", "role_label": "Wakil Ketua", "choice": "Bu Ratna" },
-      { "question_id": "vq_3", "role_key": "sekretaris", "role_label": "Sekretaris", "choice": "Bu Ani" },
-      { "question_id": "vq_4", "role_key": "bendahara", "role_label": "Bendahara", "choice": "Bu Dewi" }
-    ]
+    "message": "Tanggapan berhasil dikirim.",
+    "response": {
+      "id": "r_9988aabb",
+      "interaction_id": "i4",
+      "name": "Budi Santoso",
+      "is_anonymous": false,
+      "choice": "Ketua: Pak Suryo, Wakil: Bu Ratna, Sekretaris: Bu Ani, Bendahara: Bu Dewi",
+      "status": "Baru",
+      "answers": [
+        {
+          "question_id": "vq_1",
+          "role_key": "ketua",
+          "role_label": "Ketua",
+          "choice": "Pak Suryo"
+        },
+        {
+          "question_id": "vq_2",
+          "role_key": "wakil",
+          "role_label": "Wakil Ketua",
+          "choice": "Bu Ratna"
+        },
+        {
+          "question_id": "vq_3",
+          "role_key": "sekretaris",
+          "role_label": "Sekretaris",
+          "choice": "Bu Ani"
+        },
+        {
+          "question_id": "vq_4",
+          "role_key": "bendahara",
+          "role_label": "Bendahara",
+          "choice": "Bu Dewi"
+        }
+      ]
+    }
   }
   ```
 
@@ -508,3 +531,46 @@ Modul ini mengimplementasikan pemisahan fisik antara **Data Jawaban Voting** (ta
 ### 7.2 Statistik Personal User (`/api/v1/analytics/user-stats`)
 * **Method & URL**: `GET /api/v1/analytics/user-stats`
 * **Akses**: Wajib Login
+
+---
+
+## 🔔 8. Modul Notifikasi (`/api/v1/notifications`)
+
+Notifikasi privat per akun pengguna — mis. saat pembuat link membalas kiriman, pengisi mendapat notifikasi yang tampil di dashboard pengisi. Semua endpoint hanya mengembalikan/mengubah notifikasi milik akun yang sedang login.
+
+### 8.1 Daftar Notifikasi
+* **Method & URL**: `GET /api/v1/notifications`
+* **Akses**: Wajib Login (`Bearer Token`)
+* **Query Params**: `unread` (`1` = hanya yang belum dibaca), `limit` (1-200, default 100)
+* **Response `200 OK`**: List notifikasi milik pengguna, terurut terbaru dulu.
+
+### 8.2 Jumlah Notifikasi Belum Dibaca
+* **Method & URL**: `GET /api/v1/notifications/unread-count`
+* **Akses**: Wajib Login (`Bearer Token`)
+* **Response `200 OK`**:
+  ```json
+  {
+    "unread": 2
+  }
+  ```
+
+### 8.3 Tandai Satu Notifikasi Sudah Dibaca
+* **Method & URL**: `POST /api/v1/notifications/{id}/read`
+* **Akses**: Wajib Login (`Bearer Token`, hanya notifikasi milik sendiri; bukan milik sendiri → `404`)
+* **Response `200 OK`**:
+  ```json
+  {
+    "message": "Notifikasi ditandai sudah dibaca."
+  }
+  ```
+
+### 8.4 Tandai Semua Notifikasi Sudah Dibaca
+* **Method & URL**: `POST /api/v1/notifications/read-all`
+* **Akses**: Wajib Login (`Bearer Token`)
+* **Response `200 OK`**:
+  ```json
+  {
+    "message": "Semua notifikasi ditandai sudah dibaca.",
+    "updated": 2
+  }
+  ```

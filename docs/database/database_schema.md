@@ -121,6 +121,7 @@ Menyimpan data masukan suara, aspirasi, atau pesan anonim dari masyarakat publik
 | `reply` | `TEXT` | YES | `NULL` | Balasan atau tanggapan resmi dari pemilik formulir |
 | `shared` | `TINYINT(1)` | NO | `0` | Apakah balasan dipublikasikan (1 = Ya, 0 = Tidak) |
 | `is_anonymous` | `TINYINT(1)` | NO | `0` | Pilihan privasi: 1 = Anonymous, 0 = Nama Asli. Indeks: `idx_responses_is_anonymous` |
+| `user_id` | `VARCHAR(50)` | YES | `NULL` | **Foreign Key** -> `users(id)` ON DELETE SET NULL. Id akun pengirim bila submit saat login (untuk `GET /responses/mine`). Indeks: `idx_responses_user_id` |
 | `created_at` | `DATETIME` | NO | `CURRENT_TIMESTAMP` | Waktu submit respon oleh pengunjung |
 
 ---
@@ -223,3 +224,21 @@ Menyimpan counter rate limiting pengiriman publik (maks. 5 kiriman per menit per
 | `key_hash` | `VARCHAR(64)` | NO | - | **Primary Key**. Hash dari kunci pembatas (mis. alamat IP + endpoint) |
 | `hits` | `INT` | NO | `1` | Jumlah kiriman dalam jendela berjalan |
 | `reset_at` | `DATETIME` | NO | - | Waktu reset jendela. Indeks: `idx_rate_limits_reset` |
+
+
+---
+
+## 📋 13. Tabel: `notifications`
+Menyimpan notifikasi balasan untuk pengisi: saat pembuat link membalas kiriman, pengisi mendapat notifikasi yang tampil di dashboard pengisi.
+
+| Nama Kolom | Tipe Data | Nullable | Default | Keterangan & Constraints |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | `VARCHAR(50)` | NO | - | **Primary Key**. Format: `nt_[hex]` |
+| `user_id` | `VARCHAR(50)` | NO | - | **Foreign Key** -> `users(id)` ON DELETE CASCADE. Indeks: `idx_notifications_user` |
+| `response_id` | `VARCHAR(50)` | YES | `NULL` | **Foreign Key** -> `responses(id)` ON DELETE CASCADE |
+| `interaction_id` | `VARCHAR(50)` | YES | `NULL` | **Foreign Key** -> `interactions(id)` ON DELETE SET NULL |
+| `type` | `VARCHAR(30)` | NO | `'reply'` | Jenis notifikasi (mis. `'reply'` untuk balasan pembuat link) |
+| `title` | `VARCHAR(255)` | NO | - | Judul notifikasi |
+| `message` | `TEXT` | YES | `NULL` | Isi pesan notifikasi |
+| `is_read` | `TINYINT(1)` | NO | `0` | Status dibaca (1 = Sudah dibaca, 0 = Belum). Indeks: `idx_notifications_is_read` |
+| `created_at` | `DATETIME` | NO | `CURRENT_TIMESTAMP` | Waktu pembuatan notifikasi |

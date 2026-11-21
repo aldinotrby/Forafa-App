@@ -67,6 +67,15 @@ function registerApiRoutes(Router $router): void {
         $router->get("{$p}/interactions/{id}/questions", [QuestionController::class, 'list']);
         $router->post("{$p}/interactions/{id}/questions", [QuestionController::class, 'create']);
         $router->post("{$p}/interactions/{id}/questions/reorder", [QuestionController::class, 'reorder']);
+
+        // --------------------------------------------------------------------------
+        // Recommendation Rules & Results Routes (IF-ELSE Voting Recommendation)
+        // --------------------------------------------------------------------------
+        $router->get("{$p}/interactions/{id}/recommendation/rules", [RecommendationController::class, 'listRules']);
+        $router->post("{$p}/interactions/{id}/recommendation/rules", [RecommendationController::class, 'createRule']);
+        $router->patch("{$p}/interactions/{id}/recommendation/rules/{rid}", [RecommendationController::class, 'updateRule']);
+        $router->delete("{$p}/interactions/{id}/recommendation/rules/{rid}", [RecommendationController::class, 'deleteRule']);
+        $router->get("{$p}/interactions/{id}/recommendation/results", [RecommendationController::class, 'listResults']);
         $router->get("{$p}/interactions/{id}/questions/{qid}", [QuestionController::class, 'getDetail']);
         $router->patch("{$p}/interactions/{id}/questions/{qid}", [QuestionController::class, 'update']);
         $router->delete("{$p}/interactions/{id}/questions/{qid}", [QuestionController::class, 'delete']);
@@ -85,6 +94,14 @@ function registerApiRoutes(Router $router): void {
         // --------------------------------------------------------------------------
         $router->get("{$p}/public/{slug}", [PublicController::class, 'getDetail']);
         $router->post("{$p}/public/{slug}/submit", [PublicController::class, 'submit']);
+
+        // --------------------------------------------------------------------------
+        // Notifications Routes (Private per User)
+        // --------------------------------------------------------------------------
+        $router->get("{$p}/notifications", [NotificationController::class, 'list']);
+        $router->get("{$p}/notifications/unread-count", [NotificationController::class, 'unreadCount']);
+        $router->post("{$p}/notifications/read-all", [NotificationController::class, 'markAllRead']);
+        $router->post("{$p}/notifications/{id}/read", [NotificationController::class, 'markRead']);
 
         // --------------------------------------------------------------------------
         // Analytics & Overview Routes

@@ -294,7 +294,9 @@ class Recommendation {
             case 'neq':
                 return strcasecmp(trim($actual), trim((string)$expected)) !== 0;
             case 'contains':
-                return mb_stripos($actual, (string)$expected) !== false;
+                // mb_stripos bila tersedia, bila tidak pakai stripos
+                // (PHP tanpa ekstensi mbstring).
+                return (function_exists('mb_stripos') ? mb_stripos($actual, (string)$expected) : stripos($actual, (string)$expected)) !== false;
             case 'in':
                 $list = is_array($expected) ? $expected : [$expected];
                 foreach ($list as $candidate) {

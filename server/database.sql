@@ -1,12 +1,16 @@
 -- ==============================================================================
 -- Forafa-App Database Schema & Initial Seed Data (MySQL)
 -- ==============================================================================
-
-CREATE DATABASE IF NOT EXISTS `forafa_db` 
-CHARACTER SET utf8mb4 
-COLLATE utf8mb4_unicode_ci;
-
-USE `forafa_db`;
+--
+-- CATATAN: file ini TIDAK lagi membuat/memilih database sendiri.
+-- Nama database berasal dari DB_DATABASE di server/.env (default
+-- 'forafa_db', lihat server/src/config/config.php). setup.php sudah
+-- membuat database itu (bila belum ada) dan memilihnya sebelum
+-- mengeksekusi file ini, jadi jalankan selalu lewat setup.php:
+--   php server/setup.php
+-- Bila file ini diimpor manual (mysql < database.sql), pilih dulu
+-- database tujuannya, mis. USE `nama_db`; tanpa itu impor gagal
+-- dengan "No database selected".
 
 -- ------------------------------------------------------------------------------
 -- Table Cleanup
@@ -14,6 +18,7 @@ USE `forafa_db`;
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS `recommendation_results`;
 DROP TABLE IF EXISTS `recommendation_rules`;
+DROP TABLE IF EXISTS `notifications`;
 DROP TABLE IF EXISTS `rate_limits`;
 DROP TABLE IF EXISTS `interaction_participants`;
 DROP TABLE IF EXISTS `email_otps`;
@@ -252,6 +257,27 @@ CREATE TABLE `rate_limits` (
   `reset_at` DATETIME NOT NULL,
   PRIMARY KEY (`key_hash`),
   KEY `idx_rate_limits_reset` (`reset_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 13. Table: notifications (Notifikasi Balasan untuk Pengisi)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `notifications` (
+  `id` VARCHAR(50) NOT NULL,
+  `user_id` VARCHAR(50) NOT NULL,
+  `response_id` VARCHAR(50) NULL,
+  `interaction_id` VARCHAR(50) NULL,
+  `type` VARCHAR(30) NOT NULL DEFAULT 'reply',
+  `title` VARCHAR(255) NOT NULL,
+  `message` TEXT NULL,
+  `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_notifications_user` (`user_id`),
+  KEY `idx_notifications_is_read` (`is_read`),
+  CONSTRAINT `fk_notifications_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_notifications_response` FOREIGN KEY (`response_id`) REFERENCES `responses` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_notifications_interaction` FOREIGN KEY (`interaction_id`) REFERENCES `interactions` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------

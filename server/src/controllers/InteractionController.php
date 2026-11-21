@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../models/Interaction.php';
 require_once __DIR__ . '/../models/Response.php';
+require_once __DIR__ . '/../models/Recommendation.php';
 require_once __DIR__ . '/../utils/Response.php';
 require_once __DIR__ . '/../middlewares/AuthMiddleware.php';
 require_once __DIR__ . '/../config/database.php';
@@ -98,6 +99,7 @@ class InteractionController {
         }
 
         $db = Database::getConnection();
+        Recommendation::ensureTablesExist($db);
         $created = Interaction::create($db, $input, $targetOwnerId);
 
         ApiResponse::json($created, 201);
@@ -143,6 +145,7 @@ class InteractionController {
         }
 
         $input = json_decode(file_get_contents('php://input'), true) ?: [];
+        Recommendation::ensureTablesExist($db);
         $updated = Interaction::update($db, $id, $input);
 
         ApiResponse::json($updated, 200);

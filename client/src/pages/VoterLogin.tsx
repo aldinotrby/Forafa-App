@@ -6,7 +6,7 @@ import {
   saveIdentity,
   type VerifiedVoter,
 } from '../services/otpService'
-import { Card, Logo } from '../components/ui'
+import { Btn, Card, Field, Logo, PasswordInput, inputCls } from '../components/ui'
 
 function GoogleIcon() {
   return (
@@ -20,12 +20,17 @@ function GoogleIcon() {
 }
 
 /**
- * Layar login dashboard pengisi (`#/riwayat`): masuk dengan akun Google,
- * dengan mode Masuk / Daftar seperti halaman login utama (`Auth.tsx`).
+ * Layar login dashboard pengisi (`#/riwayat`): dua opsi masuk, sama
+ * seperti halaman login utama (`Auth.tsx`) — akun email & password, atau
+ * akun Google — dengan mode Masuk / Daftar.
  *
- * - Mode Masuk: identitas harus sudah dikenal di perangkat ini — tersimpan
- *   sebagai identitas terverifikasi, atau ada kiriman lokal (`voterKey`)
- *   atas namanya. Bila tidak ada, pengguna diarahkan ke mode Daftar.
+ * - Mode Masuk, opsi email & password: login akun Forafa (`store.login`,
+ *   verifikasi password seperti login utama) lalu dashboard menampilkan
+ *   identitas akun — riwayat server ikut tampil bila backend terjangkau.
+ * - Mode Masuk, opsi Google: identitas harus sudah dikenal di perangkat
+ *   ini — tersimpan sebagai identitas terverifikasi, atau ada kiriman
+ *   lokal (`voterKey`) atas namanya. Bila tidak ada, pengguna diarahkan
+ *   ke mode Daftar.
  * - Mode Daftar: verifikasi Google, lalu identitas baru dibuat dan
  *   disimpan — kiriman lama di perangkat ini yang memakai `voterKey`
  *   yang sama langsung ikut tampil di riwayat (tidak mulai dari 0).
@@ -39,15 +44,22 @@ function GoogleIcon() {
  * tidak tersedia. Sesi berakhir saat tab ditutup, seperti sesi lainnya.
  *
  * Dulu ada juga metode OTP WhatsApp; metode itu sudah dihapus — login
- * dan daftar pengisi sekarang hanya lewat Google.
+ * dan daftar pengisi sekarang lewat Google atau akun email & password.
  */
-export default function VoterLogin({ onLoggedIn, onCancel }: {
+export default function VoterLogin({ onLoggedIn, onAccountLoggedIn, onCancel }: {
   onLoggedIn: (v: VerifiedVoter) => void
+  /** Dipanggil saat masuk dengan akun email & password berhasil. */
+  onAccountLoggedIn?: (key: string, label: string) => void
   onCancel?: () => void
 }) {
-  const { responses, loginWithGoogle } = useStore()
+  const { responses, users, login, loginWithGoogle } = useStore()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [error, setError] = useState<string | null>(null)
+  // Opsi masuk dengan akun email & password (mode Masuk saja).
+  const [emailId, setEmailId] = useState('')
+  const [pw, setPw] = useState('')
+  const [showPw, setShowPw] = useState(false)
+  const [pwBusy, setPwBusy] = useState(false)
   const googleBtnRef = useRef<HTMLDivElement>(null)
   const googleConfigured = isGoogleConfigured()
 
@@ -103,6 +115,36 @@ export default function VoterLogin({ onLoggedIn, onCancel }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [googleConfigured])
 
+  /** Masuk dengan akun email & password — verifikasi password akun,
+      sama seperti login utama. Salah → pesan error, sesi tidak dibuat.
+      Berhasil → beri tahu dashboard identitas akunnya langsung di
+      handler ini: begitu sesi terisi, dashboard langsung menampilkan
+      tampilan akun dan komponen ini dilepas, jadi efek yang menunggu
+      `user` tidak akan sempat jalan. */
+  function submitPasswordLogin(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+    if (!emailId.trim() || !pw) {
+      setError('Isi email/username dan password akun Forafa Anda.')
+      return
+    }
+    setPwBusy(true)
+    const err = login(emailId.trim(), pw)
+    setPwBusy(false)
+    if (err) {
+      setError(err)
+      return
+    }
+    // Password sudah diverifikasi `login()` di atas; email/username
+    // unik per akun, jadi cukup cari akunnya untuk membangun kunci
+    // identitasnya (tipe `User` memang tidak membawa `password`).
+    const u = users.find((x) => x.email === emailId.trim() || x.username === emailId.trim())
+    if (u) {
+      const key = u.googleId ? `google:${u.googleId}` : `account:${u.id}`
+      onAccountLoggedIn?.(key, `Akun Forafa · ${u.username}`)
+    }
+  }
+
   /** Identitas dikenal bila tersimpan, atau ada kiriman lokal atas namanya. */
   function identityKnown(key: string, rs: typeof responses) {
     return loadIdentities().some((v) => v.key === key) || rs.some((r) => r.voterKey === key)
@@ -131,7 +173,7 @@ export default function VoterLogin({ onLoggedIn, onCancel }: {
           </h2>
           <p className="mt-1 text-sm text-mute">
             {mode === 'login'
-              ? 'Masuk dengan akun Google yang pernah Anda pakai mengisi link — riwayat voting, kritik & saran, dan balasan yang sudah ada akan tampil lagi.'
+              ? 'Masuk dengan akun email & password atau akun Google yang pernah Anda pakai mengisi link — riwayat voting, kritik & saran, dan balasan yang sudah ada akan tampil lagi.'
               : 'Daftar dengan akun Google. Setelah itu setiap link yang Anda isi dengan identitas ini tercatat di Riwayat Saya beserta status & balasannya.'}
           </p>
         </div>
@@ -140,6 +182,36 @@ export default function VoterLogin({ onLoggedIn, onCancel }: {
           <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
             {error}
           </p>
+        )}
+
+        {mode === 'login' && (
+          <form onSubmit={submitPasswordLogin} className="space-y-3">
+            <Field label="Email atau username">
+              <input
+                className={inputCls}
+                value={emailId}
+                onChange={(e) => setEmailId(e.target.value)}
+                placeholder="email@contoh.com atau username"
+                autoComplete="username"
+                required
+              />
+            </Field>
+            <Field label="Password">
+              <PasswordInput value={pw} onChange={setPw} autoComplete="current-password" show={showPw} onToggleShow={() => setShowPw((v) => !v)} required />
+            </Field>
+            <Btn className="w-full" disabled={pwBusy}>Masuk</Btn>
+            <p className="text-center text-xs text-mute">
+              Masuk dengan akun Forafa Anda — password diverifikasi seperti di halaman login utama.
+            </p>
+          </form>
+        )}
+
+        {mode === 'login' && (
+          <div className="flex items-center gap-3" aria-hidden>
+            <span className="h-px flex-1 bg-line" />
+            <span className="text-xs text-mute">atau lanjutkan dengan</span>
+            <span className="h-px flex-1 bg-line" />
+          </div>
         )}
 
         <div className="space-y-3">

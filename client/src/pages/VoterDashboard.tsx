@@ -175,6 +175,14 @@ export default function VoterDashboard() {
     }
   }
 
+  /** Identitas akun sudah dibuat oleh VoterLogin (login email &
+      password); pilih, tampilkan banner masuk, dan tutup layar login. */
+  const handleAccountLoggedIn = (key: string, label: string) => {
+    setSelectedKey(key)
+    setJustLoggedIn({ label, count: 0 })
+    setShowLogin(false)
+  }
+
   /** Identitas sudah disimpan oleh VoterLogin; muat ulang, pilih, dan
       hitung berapa kiriman lama yang ikut tampil untuk identitas itu. */
   const handleLoggedIn = (v: VerifiedVoter) => {
@@ -265,7 +273,7 @@ export default function VoterDashboard() {
         </header>
 
         {showLogin || allIdentities.length === 0 || !selected ? (
-          <VoterLogin onLoggedIn={handleLoggedIn} onCancel={allIdentities.length > 0 ? () => setShowLogin(false) : undefined} />
+          <VoterLogin onLoggedIn={handleLoggedIn} onAccountLoggedIn={handleAccountLoggedIn} onCancel={allIdentities.length > 0 ? () => setShowLogin(false) : undefined} />
         ) : (
           <>
             {/* Banner riwayat yang ikut tampil setelah masuk */}

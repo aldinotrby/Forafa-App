@@ -50,4 +50,4 @@ export function passwordStrength(password: string): PasswordStrength {
 
 /** Pesan error yang dipakai form daftar, store, dan backend. */
 export const PASSWORD_REQUIREMENTS_MESSAGE =
-  'Password harus minimal 8 karakter dan mengandung minimal 1 huruf kapital, 1 angka, dan 1 simbol.'
+  'Password minimal 8 karakter dan harus mengandung minimal 1 huruf kapital, 1 angka, dan 1 simbol.'

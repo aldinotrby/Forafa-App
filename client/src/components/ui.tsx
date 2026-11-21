@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import type { Kind, Response, Status } from '../services/store'
+import { checkPasswordRequirements, passwordStrength, type PasswordStrength } from '../services/passwordStrength'
 
 export const KIND = {
   vote: { label: 'Voting', long: 'Voting / Pemilihan', text: 'text-vote', bg: 'bg-vote', soft: 'bg-vote-soft', ring: 'border-vote/30', icon: '◧' },
@@ -46,6 +47,75 @@ export function Field({ label, children, hint }: { label: string; children: Reac
       {children}
       {hint && <span className="block text-xs text-mute">{hint}</span>}
     </label>
+  )
+}
+
+/** Kolom password dengan tombol mata di sisi kanan untuk menampilkan /
+    menyembunyikan isinya. Dipakai form daftar (Auth) & ganti password (Profil). */
+export function PasswordInput({ value, onChange, autoComplete, show, onToggleShow, required }: {
+  value: string
+  onChange: (v: string) => void
+  autoComplete?: string
+  show: boolean
+  onToggleShow: () => void
+  required?: boolean
+}) {
+  return (
+    <div className="relative">
+      <input
+        type={show ? 'text' : 'password'}
+        className={`${inputCls} pr-11`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete={autoComplete}
+        required={required}
+      />
+      <button
+        type="button"
+        aria-label={show ? 'Sembunyikan password' : 'Tampilkan password'}
+        aria-pressed={show}
+        onClick={onToggleShow}
+        className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-lg text-mute transition-colors hover:text-ink"
+      >
+        {show ? '🙈' : '👁️'}
+      </button>
+    </div>
+  )
+}
+
+/** Meter kekuatan password: bar 3 segmen (merah/kuning/hijau) + daftar
+    syarat yang terpenuhi. Muncul begitu password diisi. */
+export function PasswordStrengthMeter({ password }: { password: string }) {
+  const reqs = checkPasswordRequirements(password)
+  const level: PasswordStrength = passwordStrength(password)
+  const filled = level === 'lemah' ? 1 : level === 'lumayan' ? 2 : 3
+  const barColor = level === 'lemah' ? 'bg-red-500' : level === 'lumayan' ? 'bg-amber-400' : 'bg-emerald-500'
+  const labelColor = level === 'lemah' ? 'text-red-700' : level === 'lumayan' ? 'text-amber-700' : 'text-emerald-700'
+  const label = level === 'lemah' ? 'Lemah' : level === 'lumayan' ? 'Lumayan' : 'Kuat'
+  const items: { ok: boolean; text: string }[] = [
+    { ok: reqs.minLength, text: 'Minimal 8 karakter' },
+    { ok: reqs.hasUppercase, text: '1 huruf kapital (A-Z)' },
+    { ok: reqs.hasNumber, text: '1 angka (0-9)' },
+    { ok: reqs.hasSymbol, text: '1 simbol (! @ # $ % ^ & *)' },
+  ]
+  return (
+    <div className="space-y-2" aria-live="polite">
+      <div className="flex items-center gap-2">
+        <div className="flex flex-1 gap-1" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <span key={i} className={`h-2 flex-1 rounded-full ${i < filled ? barColor : 'bg-line'}`} />
+          ))}
+        </div>
+        <span className={`text-xs font-bold ${labelColor}`}>Kekuatan password: {label}</span>
+      </div>
+      <ul className="space-y-0.5 text-xs">
+        {items.map((it) => (
+          <li key={it.text} className={it.ok ? 'font-semibold text-emerald-700' : 'text-mute'}>
+            {it.ok ? '✓' : '✗'} {it.text}
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 

@@ -745,7 +745,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (!me) return 'Anda belum login.'
         if (me.provider !== 'password') return 'Akun ini login dengan Google, jadi tidak punya password lokal. Password diatur di akun Google Anda.'
         if ((me as never as { password: string }).password !== currentPassword) return 'Password lama salah.'
-        if (newPassword.length < 8) return 'Password minimal 8 karakter.'
+        if (!checkPasswordRequirements(newPassword).valid) return PASSWORD_REQUIREMENTS_MESSAGE
         if (newPassword === currentPassword) return 'Password baru harus berbeda dari password lama.'
         setUsers((p) => p.map((u) => (u.id === me.id ? { ...u, password: newPassword } : u)))
 
@@ -807,7 +807,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return null
       },
       resetUserPassword: (id, newPassword) => {
-        if (newPassword.length < 8) return 'Password minimal 8 karakter.'
+        if (!checkPasswordRequirements(newPassword).valid) return PASSWORD_REQUIREMENTS_MESSAGE
         setUsers((p) => p.map((u) => (u.id === id ? { ...u, password: newPassword } : u)))
 
         // Asynchronously reset password in backend

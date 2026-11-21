@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../services/store'
 import { initGoogleSignIn, isGoogleConfigured } from '../services/googleAuth'
 import { requestEmailOtp, verifyEmailOtp } from '../services/emailOtpService'
-import { checkPasswordRequirements, passwordStrength, PASSWORD_REQUIREMENTS_MESSAGE, type PasswordStrength } from '../services/passwordStrength'
-import { Btn, Field, Logo, fmtDate, inputCls } from '../components/ui'
+import { checkPasswordRequirements, PASSWORD_REQUIREMENTS_MESSAGE } from '../services/passwordStrength'
+import { Btn, Field, Logo, PasswordInput, PasswordStrengthMeter, fmtDate, inputCls } from '../components/ui'
 
 function GoogleIcon() {
   return (
@@ -13,42 +13,6 @@ function GoogleIcon() {
       <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z" />
       <path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.6-.4-3.9z" />
     </svg>
-  )
-}
-
-/** Meter kekuatan password di form daftar: bar 3 segmen (merah/kuning/
-    hijau) + daftar syarat yang terpenuhi. Muncul begitu password diisi. */
-function PasswordStrengthMeter({ password }: { password: string }) {
-  const reqs = checkPasswordRequirements(password)
-  const level: PasswordStrength = passwordStrength(password)
-  const filled = level === 'lemah' ? 1 : level === 'lumayan' ? 2 : 3
-  const barColor = level === 'lemah' ? 'bg-red-500' : level === 'lumayan' ? 'bg-amber-400' : 'bg-emerald-500'
-  const labelColor = level === 'lemah' ? 'text-red-700' : level === 'lumayan' ? 'text-amber-700' : 'text-emerald-700'
-  const label = level === 'lemah' ? 'Lemah' : level === 'lumayan' ? 'Lumayan' : 'Kuat'
-  const items: { ok: boolean; text: string }[] = [
-    { ok: reqs.minLength, text: 'Minimal 8 karakter' },
-    { ok: reqs.hasUppercase, text: '1 huruf kapital (A-Z)' },
-    { ok: reqs.hasNumber, text: '1 angka (0-9)' },
-    { ok: reqs.hasSymbol, text: '1 simbol (! @ # $ % ^ & *)' },
-  ]
-  return (
-    <div className="space-y-2" aria-live="polite">
-      <div className="flex items-center gap-2">
-        <div className="flex flex-1 gap-1" aria-hidden>
-          {[0, 1, 2].map((i) => (
-            <span key={i} className={`h-2 flex-1 rounded-full ${i < filled ? barColor : 'bg-line'}`} />
-          ))}
-        </div>
-        <span className={`text-xs font-bold ${labelColor}`}>Kekuatan password: {label}</span>
-      </div>
-      <ul className="space-y-0.5 text-xs">
-        {items.map((it) => (
-          <li key={it.text} className={it.ok ? 'font-semibold text-emerald-700' : 'text-mute'}>
-            {it.ok ? '✓' : '✗'} {it.text}
-          </li>
-        ))}
-      </ul>
-    </div>
   )
 }
 
@@ -274,25 +238,7 @@ export default function Auth() {
               )}
               <Field label="Password" hint={mode === 'register' ? 'Minimal 8 karakter, 1 huruf kapital, 1 angka, dan 1 simbol. Setelah ini, kode verifikasi 5 digit dikirim ke email Anda.' : undefined}>
                 {mode === 'register' ? (
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      className={`${inputCls} pr-11`}
-                      value={f.password}
-                      onChange={(e) => set('password', e.target.value)}
-                      autoComplete="new-password"
-                      required
-                    />
-                    <button
-                      type="button"
-                      aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
-                      aria-pressed={showPassword}
-                      onClick={() => setShowPassword((v) => !v)}
-                      className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-lg text-mute transition-colors hover:text-ink"
-                    >
-                      {showPassword ? '🙈' : '👁️'}
-                    </button>
-                  </div>
+                  <PasswordInput value={f.password} onChange={(v) => set('password', v)} autoComplete="new-password" show={showPassword} onToggleShow={() => setShowPassword((v) => !v)} required />
                 ) : (
                   <input type="password" className={inputCls} value={f.password} onChange={(e) => set('password', e.target.value)} required />
                 )}

@@ -69,8 +69,10 @@ class UserController {
             ApiResponse::error("Format email tidak valid.", 422);
         }
 
-        if (strlen($password) < 8) {
-            ApiResponse::error("Password minimal 8 karakter.", 422);
+        // Syarat password: minimal 8 karakter, 1 huruf kapital, 1 angka,
+        // dan 1 simbol (sama seperti pendaftaran & ganti password).
+        if (strlen($password) < 8 || !preg_match('/[A-Z]/', $password) || !preg_match('/[0-9]/', $password) || !preg_match('/[^A-Za-z0-9]/', $password)) {
+            ApiResponse::error("Password minimal 8 karakter dan harus mengandung minimal 1 huruf kapital, 1 angka, dan 1 simbol.", 422);
         }
 
         $db = Database::getConnection();
@@ -226,8 +228,9 @@ class UserController {
         }
 
         if (!empty($input['password'])) {
-            if (strlen($input['password']) < 8) {
-                ApiResponse::error("Password minimal 8 karakter.", 422);
+            // Syarat password baru sama seperti pendaftaran & ganti password.
+            if (strlen($input['password']) < 8 || !preg_match('/[A-Z]/', $input['password']) || !preg_match('/[0-9]/', $input['password']) || !preg_match('/[^A-Za-z0-9]/', $input['password'])) {
+                ApiResponse::error("Password minimal 8 karakter dan harus mengandung minimal 1 huruf kapital, 1 angka, dan 1 simbol.", 422);
             }
             // Pemilik akun wajib membuktikan password lama; admin tidak
             // lewat jalur ini (pakai POST /users/{id}/reset-password).
@@ -253,8 +256,9 @@ class UserController {
         $input = json_decode(file_get_contents('php://input'), true) ?: [];
         $newPassword = $input['new_password'] ?? '';
 
-        if (strlen($newPassword) < 8) {
-            ApiResponse::error("Password baru minimal 8 karakter.", 422);
+        // Syarat password baru sama seperti pendaftaran & ganti password.
+        if (strlen($newPassword) < 8 || !preg_match('/[A-Z]/', $newPassword) || !preg_match('/[0-9]/', $newPassword) || !preg_match('/[^A-Za-z0-9]/', $newPassword)) {
+            ApiResponse::error("Password baru minimal 8 karakter dan harus mengandung minimal 1 huruf kapital, 1 angka, dan 1 simbol.", 422);
         }
 
         $db = Database::getConnection();

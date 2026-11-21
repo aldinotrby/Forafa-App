@@ -3,7 +3,7 @@ import { useStore } from '../services/store'
 import { BIO_MAX_LENGTH, bioLength, changeWindow, formatChangeDate } from '../services/profile'
 import { requestEmailOtp, verifyEmailOtp } from '../services/emailOtpService'
 import { MediaUpload } from '../components/MediaUpload'
-import { Btn, Card, Field, inputCls } from '../components/ui'
+import { Btn, Card, Field, PasswordInput, PasswordStrengthMeter, inputCls } from '../components/ui'
 
 /**
  * Halaman Profil — foto, bio, username, email, password, hapus akun, keluar.
@@ -33,6 +33,8 @@ export default function Profile() {
   const [oldPw, setOldPw] = useState('')
   const [newPw, setNewPw] = useState('')
   const [newPw2, setNewPw2] = useState('')
+  /** Tampilkan password sebagai teks di form ganti password (tombol mata). */
+  const [showPw, setShowPw] = useState(false)
   const [pwMsg, setPwMsg] = useState<string | null>(null)
   const [pwErr, setPwErr] = useState<string | null>(null)
 
@@ -319,13 +321,14 @@ export default function Profile() {
         ) : (
           <>
             <Field label="Password lama">
-              <input type="password" className={inputCls} value={oldPw} onChange={(e) => setOldPw(e.target.value)} autoComplete="current-password" />
+              <PasswordInput value={oldPw} onChange={setOldPw} autoComplete="current-password" show={showPw} onToggleShow={() => setShowPw((v) => !v)} />
             </Field>
-            <Field label="Password baru" hint="Minimal 8 karakter, harus berbeda dari password lama.">
-              <input type="password" className={inputCls} value={newPw} onChange={(e) => setNewPw(e.target.value)} autoComplete="new-password" />
+            <Field label="Password baru" hint="Minimal 8 karakter, 1 huruf kapital, 1 angka, dan 1 simbol, harus berbeda dari password lama.">
+              <PasswordInput value={newPw} onChange={setNewPw} autoComplete="new-password" show={showPw} onToggleShow={() => setShowPw((v) => !v)} />
             </Field>
+            {newPw.length > 0 && <PasswordStrengthMeter password={newPw} />}
             <Field label="Konfirmasi password baru">
-              <input type="password" className={inputCls} value={newPw2} onChange={(e) => setNewPw2(e.target.value)} autoComplete="new-password" />
+              <PasswordInput value={newPw2} onChange={setNewPw2} autoComplete="new-password" show={showPw} onToggleShow={() => setShowPw((v) => !v)} />
             </Field>
             {pwErr && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{pwErr}</p>}
             {pwMsg && <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{pwMsg}</p>}

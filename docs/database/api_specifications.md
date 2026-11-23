@@ -44,13 +44,15 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
     "username": "rina_mekar",
     "email": "rina@desa-mekar.id",
     "password": "rina12345",
-    "role": "User"
+    "role": "User",
+    "email_verification_token": "token-dari-otp"
   }
   ```
 * **Validation Rules**:
   * `username`: 3-20 karakter, alfanumerik & underscore (`^[a-zA-Z0-9_]+$`)
   * `email`: Format email valid & belum terdaftar
-  * `password`: Minimal 8 karakter
+  * `password`: Minimal 8 karakter dan mengandung minimal 1 huruf kapital, 1 angka, dan 1 simbol (bila tidak memenuhi, `422` dengan pesan "Password minimal 8 karakter dan harus mengandung minimal 1 huruf kapital, 1 angka, dan 1 simbol.")
+* **Catatan**: bila SMTP dikonfigurasi, pendaftaran wajib memakai `email_verification_token` (token sekali pakai dari `POST /auth/email-otp/verify` untuk email yang didaftarkan) — tanpa token, endpoint mengembalikan `422`. Alurnya: `POST /auth/email-otp/send` (kode 5 digit ke email) → `POST /auth/email-otp/verify` → `POST /auth/register` dengan token. Bila SMTP belum dikonfigurasi, token tidak diperlukan.
 * **Response `201 Created`**:
   ```json
   {
@@ -94,7 +96,7 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
     "token_type": "bearer",
     "user": {
       "id": "u2",
-      "username": "rina",
+      "username": "forafa",
       "email": "rina@desa-mekar.id",
       "role": "User",
       "created_at": "2026-10-07T07:45:00Z"
@@ -139,7 +141,7 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
     "message": "Session aktif dan valid.",
     "user": {
       "id": "u2",
-      "username": "rina",
+      "username": "forafa",
       "email": "rina@desa-mekar.id",
       "role": "User",
       "created_at": "2026-10-07T07:45:00Z"
@@ -168,7 +170,7 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
   ```json
   {
     "id": "u2",
-    "username": "rina",
+    "username": "forafa",
     "email": "rina@desa-mekar.id",
     "role": "User",
     "created_at": "2026-10-07T07:45:00Z"
@@ -186,7 +188,8 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
 
 ### 3.2 Tambah Pengguna Baru (Admin Only)
 * **Method & URL**: `POST /api/v1/users`
-* **Request Body**: `username`, `email`, `password`, `role` (`Administrator` | `User`)
+* **Request Body**: `username`, `email`, `password`, `role` (`Administrator` | `User`), `email_verification_token`?
+* **Catatan**: bila SMTP dikonfigurasi, `email_verification_token` (token sekali pakai dari `POST /auth/email-otp/verify` untuk email calon pengguna) wajib disertakan — tanpa token, endpoint mengembalikan `422`. Bila SMTP belum dikonfigurasi, token tidak diperlukan.
 * **Response `201 Created`**: Objek pengguna baru.
 
 ### 3.3 Detail Pengguna
@@ -198,12 +201,7 @@ Sistem autentikasi Forafa-App mengintegrasikan Bearer Token JWT dengan **Server-
 * **Request Body**: `username`?, `email`?, `role`?, `password`?
 * **Response `200 OK`**: Objek pengguna terupdate.
 
-### 3.5 Reset Password (Admin Only)
-* **Method & URL**: `POST /api/v1/users/{id}/reset-password`
-* **Request Body**: `{"new_password": "..."}`
-* **Response `200 OK`**: Pesan konfirmasi sukses.
-
-### 3.6 Hapus Pengguna (Admin Only)
+### 3.5 Hapus Pengguna (Admin Only)
 * **Method & URL**: `DELETE /api/v1/users/{id}`
 * **Response `204 No Content`**
 
@@ -533,3 +531,46 @@ Modul ini mengimplementasikan pemisahan fisik antara **Data Jawaban Voting** (ta
 ### 7.2 Statistik Personal User (`/api/v1/analytics/user-stats`)
 * **Method & URL**: `GET /api/v1/analytics/user-stats`
 * **Akses**: Wajib Login
+
+---
+
+## 🔔 8. Modul Notifikasi (`/api/v1/notifications`)
+
+Notifikasi privat per akun pengguna — mis. saat pembuat link membalas kiriman, pengisi mendapat notifikasi yang tampil di dashboard pengisi. Semua endpoint hanya mengembalikan/mengubah notifikasi milik akun yang sedang login.
+
+### 8.1 Daftar Notifikasi
+* **Method & URL**: `GET /api/v1/notifications`
+* **Akses**: Wajib Login (`Bearer Token`)
+* **Query Params**: `unread` (`1` = hanya yang belum dibaca), `limit` (1-200, default 100)
+* **Response `200 OK`**: List notifikasi milik pengguna, terurut terbaru dulu.
+
+### 8.2 Jumlah Notifikasi Belum Dibaca
+* **Method & URL**: `GET /api/v1/notifications/unread-count`
+* **Akses**: Wajib Login (`Bearer Token`)
+* **Response `200 OK`**:
+  ```json
+  {
+    "unread": 2
+  }
+  ```
+
+### 8.3 Tandai Satu Notifikasi Sudah Dibaca
+* **Method & URL**: `POST /api/v1/notifications/{id}/read`
+* **Akses**: Wajib Login (`Bearer Token`, hanya notifikasi milik sendiri; bukan milik sendiri → `404`)
+* **Response `200 OK`**:
+  ```json
+  {
+    "message": "Notifikasi ditandai sudah dibaca."
+  }
+  ```
+
+### 8.4 Tandai Semua Notifikasi Sudah Dibaca
+* **Method & URL**: `POST /api/v1/notifications/read-all`
+* **Akses**: Wajib Login (`Bearer Token`)
+* **Response `200 OK`**:
+  ```json
+  {
+    "message": "Semua notifikasi ditandai sudah dibaca.",
+    "updated": 2
+  }
+  ```

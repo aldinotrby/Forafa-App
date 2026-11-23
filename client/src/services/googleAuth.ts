@@ -129,7 +129,7 @@ export function parseGoogleCredential(credential: string): GoogleProfile {
   }
 }
 
-export type GoogleSignInHandler = (result: { profile?: GoogleProfile; error?: string }) => void
+export type GoogleSignInHandler = (result: { profile?: GoogleProfile; credential?: string; error?: string }) => void
 
 /**
  * Inisialisasi GIS dan (opsional) render tombol resmi Google ke elemen target.
@@ -148,7 +148,10 @@ export async function initGoogleSignIn(handler: GoogleSignInHandler, buttonEl?: 
         return
       }
       try {
-        handler({ profile: parseGoogleCredential(response.credential) })
+        // Teruskan juga ID token mentahnya: dipakai store untuk ditukar
+        // dengan JWT backend (POST /auth/google) supaya kiriman saat login
+        // tercatat user_id-nya dan tampil di riwayat server.
+        handler({ profile: parseGoogleCredential(response.credential), credential: response.credential })
       } catch (e) {
         handler({ error: e instanceof Error ? e.message : 'Login Google gagal.' })
       }

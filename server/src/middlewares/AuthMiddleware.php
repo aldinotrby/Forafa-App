@@ -60,7 +60,7 @@ class AuthMiddleware {
             ApiResponse::error("Session telah kedaluwarsa atau telah keluar. Silakan login kembali.", 401);
         }
 
-        $stmt = $db->prepare("SELECT id, username, email, role, created_at FROM users WHERE id = :id");
+        $stmt = $db->prepare("SELECT id, username, email, role, bio, avatar, username_changed_at, email_changed_at, created_at FROM users WHERE id = :id");
         $stmt->execute([':id' => $payload['sub']]);
         $user = $stmt->fetch();
 

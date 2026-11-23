@@ -23,6 +23,7 @@ require_once __DIR__ . '/middlewares/AuthMiddleware.php';
 require_once __DIR__ . '/middlewares/RateLimitMiddleware.php';
 require_once __DIR__ . '/middlewares/SpamProtectionMiddleware.php';
 require_once __DIR__ . '/controllers/AuthController.php';
+require_once __DIR__ . '/controllers/EmailOtpController.php';
 require_once __DIR__ . '/controllers/UserController.php';
 require_once __DIR__ . '/controllers/InteractionController.php';
 require_once __DIR__ . '/controllers/QuestionController.php';

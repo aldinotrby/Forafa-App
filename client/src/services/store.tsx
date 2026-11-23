@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { disableGoogleAutoSelect, type GoogleProfile } from './googleAuth'
+import { BIO_MAX_LENGTH, PROFILE_CHANGE_COOLDOWN_MS, bioLength } from './profile'
+import { checkPasswordRequirements, PASSWORD_REQUIREMENTS_MESSAGE } from './passwordStrength'
 
 export type Kind = 'vote' | 'feedback' | 'anon'
 export type Status = 'Baru' | 'Dibaca' | 'Diproses' | 'Selesai'
@@ -14,6 +16,12 @@ export interface User {
   email: string
   role: Role
   avatar?: string
+  /** Bio profil, maksimal 160 karakter. */
+  bio?: string
+  /** Terakhir kali username diganti (ISO) — ganti berikutnya 7 hari lagi. */
+  usernameChangedAt?: string | null
+  /** Terakhir kali email diganti (ISO) — ganti berikutnya 7 hari lagi. */
+  emailChangedAt?: string | null
   /** Cara pengguna pertama kali masuk: password atau Google. */
   provider?: AuthProvider
   /** Subject ID Google (`sub`), hanya untuk akun Google. */
@@ -93,15 +101,25 @@ export interface Response {
    */
   anonymous?: boolean
   /**
-   * Identitas terverifikasi pengirim voting (1 akun/nomor = 1 suara):
-   * `google:<sub>` atau `wa:<nomor62>`. Dipakai untuk menampilkan pesan
+   * Identitas terverifikasi pengirim voting (1 akun = 1 suara):
+   * `google:<sub>` (atau `wa:<nomor62>` untuk data lama dari sebelum
+   * metode OTP WhatsApp dihapus). Dipakai untuk menampilkan pesan
    * "sudah pernah voting" bila identitas yang sama mengisi lagi.
    */
   voterKey?: string
-  /** Cara voter terverifikasi: Google atau OTP WhatsApp. */
+  /** Cara voter terverifikasi: Google (atau 'whatsapp' untuk data lama). */
   verifiedVia?: 'google' | 'whatsapp'
-  /** Label tampil identitas terverifikasi (email / nomor tersamarkan). */
+  /** Label tampil identitas terverifikasi (email / nomor tersamarkan untuk data lama). */
   verificationLabel?: string
+  /**
+   * Kiriman dari server (GET /responses/mine), bukan dari localStorage.
+   * Judul/slug/jenis link ikut dari backend supaya kiriman yang dibuat di
+   * perangkat lain tetap tampil meski linknya tidak ada di perangkat ini.
+   */
+  fromServer?: boolean
+  interactionTitle?: string
+  interactionSlug?: string
+  interactionKind?: Kind
 }
 
 interface Store {
@@ -117,20 +135,40 @@ interface Store {
   loginStatus: 'masuk' | 'keluar'
   /** Jejak tab terakhir ditutup & logout terakhir. */
   sessionHistory: SessionHistory
-  register: (u: { username: string; email: string; password: string }) => string | null
+  register: (u: { username: string; email: string; password: string; verificationToken?: string }) => string | null
   login: (id: string, password: string) => string | null
-  /** Login/registrasi dengan profil terverifikasi dari Google Sign-In. */
-  loginWithGoogle: (profile: GoogleProfile) => string | null
+  /** Login/registrasi dengan profil terverifikasi dari Google Sign-In.
+      Bila `credential` (ID token GIS) disertakan, token itu ditukar dengan
+      JWT backend (POST /auth/google) supaya kiriman saat login tercatat
+      user_id-nya dan tampil di riwayat server. */
+  loginWithGoogle: (profile: GoogleProfile, credential?: string) => string | null
   logout: () => void
-  adminCreateUser: (u: { username: string; email: string; password: string }) => string | null
+  /**
+   * Ubah profil sendiri: foto, bio (maks. 160 karakter), username & email
+   * (masing-masing 1x dalam 7 hari). Ganti email wajib menyertakan
+   * `emailVerificationToken` — token sekali pakai dari verifikasi kode
+   * OTP 5 digit ke email baru (lihat `emailOtpService`). Tanpa token,
+   * ganti email ditolak; username/bio/foto tidak kena aturan ini.
+   * Mengembalikan pesan error atau null.
+   */
+  updateProfile: (patch: { username?: string; email?: string; avatar?: string | null; bio?: string; emailVerificationToken?: string }) => string | null
+  /**
+   * Ganti password akun email (provider 'password'). Akun Google tidak
+   * memakai password lokal — kembalikan error untuk akun Google.
+   */
+  changePassword: (currentPassword: string, newPassword: string) => string | null
+  /**
+   * Hapus akun sendiri beserta semua link & respons miliknya, lalu logout.
+   * Akun email wajib menyertakan password saat ini sebagai konfirmasi.
+   */
+  deleteOwnAccount: (password?: string) => string | null
+  adminCreateUser: (u: { username: string; email: string; password: string; verificationToken?: string }) => string | null
   updateUser: (id: string, patch: { username?: string; email?: string; avatar?: string }) => string | null
-  resetUserPassword: (id: string, newPassword: string) => string | null
   removeUser: (id: string) => void
   addInteraction: (i: Omit<Interaction, 'id' | 'ownerId' | 'slug' | 'createdAt'>, ownerIdOverride?: string) => Interaction
   updateInteraction: (id: string, patch: Partial<Interaction>) => void
   removeInteraction: (id: string) => void
-  /** verificationToken (OTP WhatsApp, 15 menit) ikut terkirim ke backend tapi TIDAK disimpan lokal. */
-  submit: (r: Omit<Response, 'id' | 'at' | 'status'> & { verificationToken?: string }) => void
+  submit: (r: Omit<Response, 'id' | 'at' | 'status'>) => void
   patchResponse: (id: string, patch: Partial<Response>) => void
   removeResponse: (id: string) => void
 }
@@ -144,7 +182,7 @@ const day = (d: number) => new Date(Date.now() + d * 86400_000).toISOString().sl
 
 const seedUsers: (User & { password: string })[] = [
   { id: 'u1', username: 'admin', email: 'admin@forafa.app', role: 'Administrator', password: 'admin12345', provider: 'password' },
-  { id: 'u2', username: 'rina', email: 'rina@desa-mekar.id', role: 'User', password: 'rina12345', provider: 'password' },
+  { id: 'u2', username: 'forafa', email: 'rina@desa-mekar.id', role: 'User', password: 'forafa123', provider: 'password' },
   { id: 'u3', username: 'budi_rw', email: 'budi@rw05.id', role: 'User', password: 'budi12345', provider: 'password' },
 ]
 
@@ -193,12 +231,12 @@ const seedResponses: Response[] = [
   { id: 'f2', iid: 'i2', name: 'Pak Dedi', message: 'Ruang tunggu kurang kursi untuk lansia.', status: 'Dibaca', at: ago(20) },
   { id: 'f3', iid: 'i2', name: 'Mita', message: 'Petugas sangat ramah, terima kasih!', status: 'Selesai', reply: 'Terima kasih atas apresiasinya, Bu Mita.', at: ago(60) },
   { id: 'f4', iid: 'i2', name: 'Joko', message: 'Tolong tambah papan informasi jadwal imunisasi.', status: 'Diproses', reply: 'Sedang kami siapkan minggu ini.', at: ago(90) },
-  { id: 'f5', iid: 'i2', name: 'Wati', message: '[Jadwal] Mohon ada sesi sore untuk posyandu.', status: 'Diproses', reply: 'Baik, mulai bulan depan kami buka sesi sore tiap Rabu.', voterKey: 'wa:628123456789', verifiedVia: 'whatsapp', verificationLabel: '+62 812-****-789', at: ago(120) },
-  { id: 'f6', iid: 'i2', name: 'Slamet', message: 'Mohon jadwal ronda malam diumumkan di grup.', status: 'Selesai', reply: 'Sudah diumumkan, terima kasih masukannya.', voterKey: 'google:110012345678901234567', verifiedVia: 'google', verificationLabel: 's***@gmail.com', at: ago(200) },
+  { id: 'f5', iid: 'i2', name: 'Wati', message: '[Jadwal] Mohon ada sesi sore untuk posyandu.', status: 'Diproses', reply: 'Baik, mulai bulan depan kami buka sesi sore tiap Rabu.', at: ago(120) },
+  { id: 'f6', iid: 'i2', name: 'Slamet', message: 'Mohon jadwal ronda malam diumumkan di grup.', status: 'Selesai', reply: 'Sudah diumumkan, terima kasih masukannya.', at: ago(200) },
   { id: 'a1', iid: 'i3', message: 'Lampu jalan di gang mawar sudah seminggu mati.', status: 'Baru', at: ago(4) },
   { id: 'a2', iid: 'i3', message: 'Iuran kebersihan sebaiknya dilaporkan terbuka tiap bulan.', status: 'Dibaca', at: ago(30) },
-  { id: 'v30', iid: 'i6', name: 'Wati', choice: 'Ketua: Bu Ratna; Wakil Ketua: Dewi Lestari; Sekretaris: Maya Putri; Bendahara: Sari Wulandari', choices: { q1: 'Bu Ratna', q2: 'Dewi Lestari', q3: 'Maya Putri', q4: 'Sari Wulandari' }, voterKey: 'wa:628123456789', verifiedVia: 'whatsapp', verificationLabel: '+62 812-****-789', status: 'Baru', at: ago(2) },
-  { id: 'v31', iid: 'i6', name: 'Slamet', choice: 'Ketua: Pak Suryo; Wakil Ketua: Agus Santoso; Sekretaris: Maya Putri; Bendahara: Hendra Gunawan', choices: { q1: 'Pak Suryo', q2: 'Agus Santoso', q3: 'Maya Putri', q4: 'Hendra Gunawan' }, voterKey: 'google:110012345678901234567', verifiedVia: 'google', verificationLabel: 's***@gmail.com', status: 'Baru', at: ago(4) },
+  { id: 'v30', iid: 'i6', name: 'Wati', choice: 'Ketua: Bu Ratna; Wakil Ketua: Dewi Lestari; Sekretaris: Maya Putri; Bendahara: Sari Wulandari', choices: { q1: 'Bu Ratna', q2: 'Dewi Lestari', q3: 'Maya Putri', q4: 'Sari Wulandari' }, status: 'Baru', at: ago(2) },
+  { id: 'v31', iid: 'i6', name: 'Slamet', choice: 'Ketua: Pak Suryo; Wakil Ketua: Agus Santoso; Sekretaris: Maya Putri; Bendahara: Hendra Gunawan', choices: { q1: 'Pak Suryo', q2: 'Agus Santoso', q3: 'Maya Putri', q4: 'Hendra Gunawan' }, status: 'Baru', at: ago(4) },
   { id: 'v20', iid: 'i4', name: 'Wati', choice: 'Bu Ratna', status: 'Baru', at: ago(3) },
   { id: 'v21', iid: 'i4', name: 'Slamet', choice: 'Pak Suryo', status: 'Baru', at: ago(5) },
   { id: 'v22', iid: 'i4', name: 'Dwi', choice: 'Bu Ratna', status: 'Baru', at: ago(8) },
@@ -224,6 +262,78 @@ const apiCall = async (path: string, options: RequestInit = {}) => {
     })
   } catch {
     return null
+  }
+}
+
+/** Simpan JWT backend ke sessionStorage — dipakai semua apiCall
+    berikutnya (termasuk submit publik, supaya kiriman tercatat
+    user_id-nya). Sesi ini hanya hidup selama tab terbuka: pagehide
+    menghapus fa_token (lihat di bawah). */
+const storeBackendToken = (accessToken: unknown): boolean => {
+  if (typeof accessToken !== 'string' || !accessToken) return false
+  try {
+    sessionStorage.setItem('fa_token', accessToken)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Tukar kredensial akun dengan JWT backend. Best-effort dan tidak
+ * memblokir: backend yang tidak terjangkau, atau akun yang belum ada di
+ * backend, tidak mengganggu login lokal — aplikasi tetap jalan penuh
+ * dengan data lokal, hanya riwayat server yang tidak tersedia.
+ */
+const backendLoginPassword = async (id: string, password: string): Promise<boolean> => {
+  try {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, password }),
+    })
+    if (!res.ok) return false
+    const data = await res.json().catch(() => null)
+    return storeBackendToken(data?.access_token)
+  } catch {
+    return false
+  }
+}
+
+/** Tukar ID token Google (GIS) dengan JWT backend (POST /auth/google). */
+const backendLoginGoogle = async (credential: string): Promise<boolean> => {
+  try {
+    const res = await fetch(`${API_BASE}/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential }),
+    })
+    if (!res.ok) return false
+    const data = await res.json().catch(() => null)
+    return storeBackendToken(data?.access_token)
+  } catch {
+    return false
+  }
+}
+
+/** Buatkan akun yang sama di backend (lalu login) supaya akun baru juga
+    punya riwayat server. Best-effort seperti backendLoginPassword. */
+const backendRegister = async (u: { username: string; email: string; password: string; verificationToken?: string }): Promise<boolean> => {
+  try {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: u.username,
+        email: u.email,
+        password: u.password,
+        ...(u.verificationToken ? { verification_token: u.verificationToken } : {}),
+      }),
+    })
+    if (!res.ok) return false
+    return backendLoginPassword(u.email, u.password)
+  } catch {
+    return false
   }
 }
 
@@ -294,6 +404,9 @@ const normalizeUser = (raw: any): User => ({
   email: String(raw.email || ''),
   role: (raw.role as Role) || 'User',
   avatar: raw.avatar,
+  bio: raw.bio,
+  usernameChangedAt: raw.usernameChangedAt ?? raw.username_changed_at ?? null,
+  emailChangedAt: raw.emailChangedAt ?? raw.email_changed_at ?? null,
 })
 
 function load<T>(key: string, fallback: T, storage: Storage = localStorage): T {
@@ -303,6 +416,27 @@ function load<T>(key: string, fallback: T, storage: Storage = localStorage): T {
   } catch {
     return fallback
   }
+}
+
+/**
+ * Jenis navigasi pemuatan halaman ini (Navigation Timing API, dengan
+ * fallback ke `performance.navigation` lama): `'reload'` bila pengguna
+ * memuat ulang halaman (refresh), `'navigate'` untuk pemuatan baru
+ * (tab baru/duplikat, ketik URL, datang dari situs lain), dan
+ * `'back_forward'` untuk tombol Back/forward. Bila API tidak tersedia,
+ * dianggap navigasi baru supaya sesi tetap berakhir (perilaku lama).
+ */
+function navigationType(): string {
+  try {
+    const entries = performance.getEntriesByType?.('navigation') as PerformanceNavigationTiming[] | undefined
+    if (entries && entries.length > 0 && entries[0].type) return entries[0].type
+    const legacy = (performance as unknown as { navigation?: { type?: number } }).navigation
+    if (legacy && legacy.type === 1) return 'reload'
+    if (legacy && typeof legacy.type === 'number') return 'navigate'
+  } catch {
+    // API tidak tersedia — diperlakukan sebagai navigasi baru di bawah.
+  }
+  return 'navigate'
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -316,10 +450,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const tabInitRef = useRef(false)
 
   useEffect(() => localStorage.setItem('fa_users', JSON.stringify(users)), [users])
-  // Sesi disimpan di sessionStorage dan diakhiri begitu halaman
-  // ditinggalkan (lihat penanganan pagehide/pageshow di bawah): menutup
-  // tab, memuat ulang halaman, atau pindah ke situs lain berarti sesi
-  // berakhir dan pengguna harus login kembali.
+  // Sesi disimpan di sessionStorage. Memuat ulang halaman (refresh)
+  // TIDAK mengakhiri sesi — sesi dipulihkan dari sessionStorage saat
+  // halaman dimuat lagi (lihat kondisi tab di bawah). Yang mengakhiri
+  // sesi: menutup tab (sessionStorage ikut terhapus), pindah ke situs
+  // lain lalu kembali lewat navigasi baru, tab duplikat, dan tombol
+  // Back/forward (lihat penanganan pageshow).
   useEffect(() => sessionStorage.setItem('fa_session', JSON.stringify(sessionId)), [sessionId])
   useEffect(() => {
     if (session) sessionStorage.setItem('fa_session_info', JSON.stringify(session))
@@ -341,17 +477,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => localStorage.setItem('fa_resp', JSON.stringify(responses)), [responses])
 
   // --- Kondisi akun saat tab dibuka / ditutup ---------------------------------
-  // Sesi hanya hidup selama halaman ini terbuka (lihat pagehide/pageshow
-  // di bawah): menutup tab, memuat ulang halaman, atau meninggalkan
-  // aplikasi mengakhiri sesi, dan membuka aplikasi lagi berarti harus
-  // login kembali. Blok ini hanya menyegarkan stempel waktu bila masih
-  // ada sesi yang terbaca di tab ini (mis. tab duplikat yang menyalin
-  // sessionStorage, atau sesi yang dipulihkan browser setelah crash),
-  // dan membuatkan info sesi bila ID sesi ada tetapi info sesinya
-  // belum ada.
+  // Memuat ulang halaman (refresh) TIDAK mengakhiri sesi: pemuatan dengan
+  // jenis navigasi 'reload' memulihkan sesi dari sessionStorage (hanya
+  // stempel waktunya disegarkan, seperti dulu). Sebaliknya, pemuatan baru
+  // — tab baru/duplikat, ketik URL, datang dari situs lain, atau tombol
+  // Back/forward — mengakhiri sesi: kunci sesi dihapus dan pengguna harus
+  // login kembali. Blok ini hanya berjalan sekali saat provider dipasang
+  // (tab dibuka / halaman dimuat), dan membuatkan info sesi bila ID sesi
+  // ada tetapi info sesinya belum ada.
   useEffect(() => {
     if (tabInitRef.current) return
     tabInitRef.current = true
+    if (navigationType() !== 'reload' && sessionId) {
+      // Bukan refresh: sesi dari pemuatan sebelumnya sudah berakhir.
+      try {
+        sessionStorage.removeItem('fa_session')
+        sessionStorage.removeItem('fa_session_info')
+        sessionStorage.removeItem('fa_token')
+      } catch {
+        // Penyimpanan tidak tersedia — tidak ada sesi yang perlu diakhiri.
+      }
+      disableGoogleAutoSelect()
+      setSessionId(null)
+      setSession(null)
+      return
+    }
     const openedAt = nowIso()
     setSession((prev) => {
       if (!sessionId) return prev
@@ -369,12 +519,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Tab terlihat / disembunyikan, jendela fokus / tidak fokus → presence + lastSeen.
   // Halaman dibongkar (pagehide/beforeunload: tab ditutup, halaman dimuat
   // ulang, atau pindah ke situs lain) → catat waktu tutupnya ke localStorage
-  // secara sinkron, lalu AKHIRI SESI saat itu juga dengan menghapus kunci
-  // sesi dari sessionStorage — membuka aplikasi lagi selalu mulai dari
-  // halaman login. Pengecualian: bila halaman hanya masuk back-forward
-  // cache (pagehide dengan persisted=true), penghapusan ditunda sampai
-  // halaman dipulihkan lagi (lihat onPageShow), karena halaman yang sama
-  // akan hidup kembali.
+  // secara sinkron. Sesi TIDAK dihapus di sini: kunci sesi dibiarkan di
+  // sessionStorage, dan pemuatan berikutnya yang memutuskan — refresh
+  // ('reload') memulihkan sesi, pemuatan baru mengakhirinya (lihat kondisi
+  // tab di atas). Menutup tab tetap mengakhiri sesi karena browser
+  // menghapus sessionStorage tab itu. Pengecualian: bila halaman hanya
+  // masuk back-forward cache (pagehide dengan persisted=true), penghapusan
+  // ditunda sampai halaman dipulihkan lagi (lihat onPageShow), karena
+  // halaman yang sama akan hidup kembali.
   useEffect(() => {
     const markSeen = (p: Presence) => {
       setPresence(p)
@@ -405,7 +557,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       } catch {
         // Penyimpanan tidak tersedia — kondisi tab tidak tercatat.
       }
-      if (!persisted) endSessionNow()
+      // Kunci sesi sengaja dibiarkan di sessionStorage (lihat komentar di
+      // atas): pemuatan berikutnya yang memutuskan berdasarkan jenis
+      // navigasinya — refresh memulihkan sesi, pemuatan baru mengakhirinya.
       setSessionHistory((prev) => ({ ...prev, lastTabClosedAt: closedAt }))
     }
     const onPageShow = (e: Event) => {
@@ -466,23 +620,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       presence,
       loginStatus: user ? 'masuk' : 'keluar',
       sessionHistory,
-      register: ({ username, email, password }) => {
+      register: ({ username, email, password, verificationToken }) => {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
         if (!/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
-        if (password.length < 8) return 'Password minimal 8 karakter.'
+        if (!checkPasswordRequirements(password).valid) return PASSWORD_REQUIREMENTS_MESSAGE
+        // Pendaftaran email wajib lewat verifikasi OTP: token sekali pakai
+        // dari POST /auth/email-otp/verify (kode 5 digit dari
+        // forafagroup@gmail.com). Tanpa token, akun tidak dibuat — tidak
+        // ada jalur demo. Akun Google tidak lewat sini (loginWithGoogle).
+        if (!verificationToken) return 'Verifikasi email wajib: minta kode 5 digit ke email Anda dan verifikasi dulu sebelum daftar.'
         if (users.some((u) => u.email === email || u.username.toLowerCase() === username.toLowerCase())) return 'Email atau username sudah terdaftar.'
         const u = { id: uid(), username, email, role: 'User' as Role, password, provider: 'password' as AuthProvider }
         setUsers((p) => [...p, u])
         startSession(u)
+        // Buatkan akun yang sama di backend (best-effort) supaya riwayat
+        // server tersedia untuk akun ini — lihat backendRegister.
+        void backendRegister({ username, email, password, verificationToken })
         return null
       },
       login: (id, password) => {
         const u = users.find((x) => (x.email === id || x.username === id) && (x as never as { password: string }).password === password)
         if (!u) return 'Email/username atau password salah.'
         startSession(u)
+        // Tukar kredensial dengan JWT backend (best-effort): tanpa ini,
+        // kiriman tidak tercatat user_id-nya dan riwayat server kosong.
+        void backendLoginPassword(id, password)
         return null
       },
-      loginWithGoogle: (profile) => {
+      loginWithGoogle: (profile, credential) => {
         if (!profile.email || !profile.googleId) return 'Profil Google tidak lengkap (email tidak tersedia).'
         if (!profile.emailVerified) return 'Email Google Anda belum terverifikasi.'
         const existing = users.find((u) => u.googleId === profile.googleId || u.email.toLowerCase() === profile.email.toLowerCase())
@@ -491,6 +656,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const linked: User = { ...existing, provider: 'google', googleId: profile.googleId, avatar: existing.avatar ?? profile.picture }
           setUsers((p) => p.map((u) => (u.id === existing.id ? { ...u, provider: 'google', googleId: profile.googleId, avatar: u.avatar ?? profile.picture } : u)))
           startSession(linked)
+          if (credential) void backendLoginGoogle(credential)
           return null
         }
         const username = usernameFromEmail(profile.email, (c) => users.some((u) => u.username.toLowerCase() === c.toLowerCase()))
@@ -499,26 +665,149 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const u = { id: uid(), username, email: profile.email, role: 'User' as Role, password: `google:${uid()}${uid()}${uid()}`, provider: 'google' as AuthProvider, googleId: profile.googleId, avatar: profile.picture }
         setUsers((p) => [...p, u])
         startSession(u)
+        if (credential) void backendLoginGoogle(credential)
         return null
       },
       logout: () => {
         disableGoogleAutoSelect()
+        try {
+          sessionStorage.removeItem('fa_token')
+        } catch {
+          // Penyimpanan tidak tersedia — tidak ada token yang perlu dihapus.
+        }
         setSessionHistory((prev) => ({ ...prev, lastLogoutAt: nowIso() }))
         setSession(null)
         setSessionId(null)
       },
-      adminCreateUser: ({ username, email, password }) => {
+      updateProfile: (patch) => {
+        const me = users.find((u) => u.id === sessionId)
+        if (!me) return 'Anda belum login.'
+        const { username, email, avatar, bio, emailVerificationToken } = patch
+        const now = Date.now()
+        const nextDate = (changedAt?: string | null) =>
+          changedAt ? new Date(new Date(changedAt).getTime() + PROFILE_CHANGE_COOLDOWN_MS) : null
+        if (username !== undefined && username !== me.username) {
+          if (!/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
+          if (users.some((u) => u.id !== me.id && u.username.toLowerCase() === username.toLowerCase())) return 'Username sudah digunakan.'
+          const next = nextDate(me.usernameChangedAt)
+          if (next && now < next.getTime()) {
+            return `Username baru bisa diganti lagi pada ${next.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} (1x dalam 7 hari).`
+          }
+        }
+        if (email !== undefined && email !== me.email) {
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
+          if (users.some((u) => u.id !== me.id && u.email === email)) return 'Email sudah digunakan.'
+          const next = nextDate(me.emailChangedAt)
+          if (next && now < next.getTime()) {
+            return `Email baru bisa diganti lagi pada ${next.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} (1x dalam 7 hari).`
+          }
+          // Ganti email wajib membuktikan kepemilikan email baru: token
+          // sekali pakai dari verifikasi kode OTP 5 digit yang dikirim
+          // ke email baru (tanpa kode demo). Tanpa token, email tidak
+          // diganti — username/bio/foto tetap bisa disimpan terpisah.
+          if (!emailVerificationToken) {
+            return 'Ganti email wajib verifikasi: minta kode 5 digit ke email baru Anda dan verifikasi dulu sebelum menyimpan.'
+          }
+        }
+        if (bio !== undefined && bioLength(bio) > BIO_MAX_LENGTH) return `Bio maksimal ${BIO_MAX_LENGTH} karakter.`
+        const applied: Partial<User> = {}
+        if (username !== undefined && username !== me.username) {
+          applied.username = username
+          applied.usernameChangedAt = new Date(now).toISOString()
+        }
+        if (email !== undefined && email !== me.email) {
+          applied.email = email
+          applied.emailChangedAt = new Date(now).toISOString()
+        }
+        if (avatar !== undefined) applied.avatar = avatar ?? undefined
+        if (bio !== undefined) applied.bio = bio.trim() === '' ? undefined : bio.trim()
+        if (Object.keys(applied).length === 0) return 'Tidak ada perubahan untuk disimpan.'
+        setUsers((p) => p.map((u) => (u.id === me.id ? { ...u, ...applied } : u)))
+
+        // Sinkronisasi ke backend (PATCH /users/{id} menegakkan aturan
+        // yang sama: cooldown 7 hari, bio maks. 160 karakter, dan ganti
+        // email wajib token verifikasi OTP bila SMTP dikonfigurasi).
+        apiCall(`/users/${me.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            ...(applied.username ? { username: applied.username } : {}),
+            ...(applied.email ? { email: applied.email, ...(emailVerificationToken ? { email_verification_token: emailVerificationToken } : {}) } : {}),
+            ...(avatar !== undefined ? { avatar: avatar ?? null } : {}),
+            ...(bio !== undefined ? { bio: applied.bio ?? null } : {}),
+          }),
+        })
+
+        return null
+      },
+      changePassword: (currentPassword, newPassword) => {
+        const me = users.find((u) => u.id === sessionId)
+        if (!me) return 'Anda belum login.'
+        if (me.provider !== 'password') return 'Akun ini login dengan Google, jadi tidak punya password lokal. Password diatur di akun Google Anda.'
+        if ((me as never as { password: string }).password !== currentPassword) return 'Password lama salah.'
+        if (!checkPasswordRequirements(newPassword).valid) return PASSWORD_REQUIREMENTS_MESSAGE
+        if (newPassword === currentPassword) return 'Password baru harus berbeda dari password lama.'
+        setUsers((p) => p.map((u) => (u.id === me.id ? { ...u, password: newPassword } : u)))
+
+        // Sinkronisasi ke backend (wajib menyertakan password lama).
+        apiCall(`/users/${me.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ password: newPassword, current_password: currentPassword }),
+        })
+
+        return null
+      },
+      deleteOwnAccount: (password) => {
+        const me = users.find((u) => u.id === sessionId)
+        if (!me) return 'Anda belum login.'
+        if (me.provider === 'password' && (me as never as { password: string }).password !== password) {
+          return 'Password salah. Penghapusan akun dibatalkan.'
+        }
+        const userInteractionIds = interactions.filter((i) => i.ownerId === me.id).map((i) => i.id)
+        setUsers((p) => p.filter((u) => u.id !== me.id))
+        setInteractions((p) => p.filter((i) => i.ownerId !== me.id))
+        setResponses((p) => p.filter((r) => !userInteractionIds.includes(r.iid)))
+        setSession(null)
+        setSessionId(null)
+
+        // Sinkronisasi ke backend (DELETE /users/{id} mengizinkan hapus akun sendiri).
+        apiCall(`/users/${me.id}`, { method: 'DELETE' })
+
+        return null
+      },
+      adminCreateUser: ({ username, email, password, verificationToken }) => {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Format email tidak valid.'
         if (!/^[a-z0-9_]{3,20}$/i.test(username)) return 'Username 3-20 karakter: huruf, angka, underscore.'
-        if (password.length < 8) return 'Password minimal 8 karakter.'
+        if (!checkPasswordRequirements(password).valid) return PASSWORD_REQUIREMENTS_MESSAGE
         if (users.some((u) => u.email === email || u.username.toLowerCase() === username.toLowerCase())) return 'Email atau username sudah terdaftar.'
         const u = { id: uid(), username, email, role: 'User' as Role, password, provider: 'password' as AuthProvider }
         setUsers((p) => [...p, u])
 
-        // Asynchronously persist in backend
-        apiCall('/users', {
+        // Simpan ke backend (token verifikasi email diteruskan supaya
+        // backend bisa memastikan email calon pengguna sudah terverifikasi).
+        // Bila berhasil, pakai id backend untuk pengguna ini supaya edit
+        // dan hapus berikutnya mengenai record yang sama — id lokal acak
+        // tidak ada di backend, jadi tanpa ini edit/hapus hanya jalan
+        // lokal (backend mengembalikan 404 yang selama ini diam-diam
+        // diabaikan).
+        void apiCall('/users', {
           method: 'POST',
-          body: JSON.stringify({ username, email, password, role: 'User' }),
+          body: JSON.stringify({
+            username,
+            email,
+            password,
+            role: 'User',
+            ...(verificationToken ? { email_verification_token: verificationToken } : {}),
+          }),
+        }).then(async (res) => {
+          if (!res || !res.ok) return
+          try {
+            const data = (await res.json()) as { id?: unknown }
+            if (typeof data.id === 'string' && data.id !== u.id) {
+              setUsers((p) => p.map((x) => (x.id === u.id ? { ...x, id: data.id as string } : x)))
+            }
+          } catch {
+            // Abaikan — pengguna tetap bisa dipakai secara lokal.
+          }
         })
 
         return null
@@ -534,18 +823,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         apiCall(`/users/${id}`, {
           method: 'PATCH',
           body: JSON.stringify(patch),
-        })
-
-        return null
-      },
-      resetUserPassword: (id, newPassword) => {
-        if (newPassword.length < 8) return 'Password minimal 8 karakter.'
-        setUsers((p) => p.map((u) => (u.id === id ? { ...u, password: newPassword } : u)))
-
-        // Asynchronously reset password in backend
-        apiCall(`/users/${id}/reset-password`, {
-          method: 'POST',
-          body: JSON.stringify({ new_password: newPassword }),
         })
 
         return null
@@ -605,8 +882,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         apiCall(`/interactions/${id}`, { method: 'DELETE' })
       },
       submit: (r) => {
-        const { verificationToken, ...rest } = r
-        const n: Response = { ...rest, id: uid(), status: 'Baru', at: new Date().toISOString() }
+        const n: Response = { ...r, id: uid(), status: 'Baru', at: new Date().toISOString() }
         setResponses((p) => [n, ...p])
 
         // Asynchronously submit through backend public portal
@@ -615,12 +891,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           apiCall(`/public/${targetInter.slug}/submit`, {
             method: 'POST',
             body: JSON.stringify({
-              name: rest.name,
-              choice: rest.choice,
-              choices: rest.choices,
-              message: rest.message,
-              verification: rest.voterKey
-                ? { type: rest.verifiedVia, identifier: rest.voterKey, token: verificationToken }
+              name: r.name,
+              choice: r.choice,
+              choices: r.choices,
+              message: r.message,
+              verification: r.voterKey
+                ? { type: r.verifiedVia, identifier: r.voterKey }
                 : undefined,
             }),
           })

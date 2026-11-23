@@ -30,8 +30,14 @@ function registerApiRoutes(Router $router): void {
         // --------------------------------------------------------------------------
         $router->post("{$p}/auth/register", [AuthController::class, 'register']);
         $router->post("{$p}/auth/login", [AuthController::class, 'login']);
+        // Login akun Google: tukar ID token GIS dengan JWT backend — dipakai
+        // supaya kiriman saat login (submit publik) tercatat user_id-nya dan
+        // tampil di GET /responses/mine dari perangkat mana pun.
         $router->post("{$p}/auth/google", [AuthController::class, 'googleLogin']);
         $router->post("{$p}/auth/logout", [AuthController::class, 'logout']);
+        // Verifikasi email pendaftaran — kode 5 digit dari forafagroup@gmail.com.
+        $router->post("{$p}/auth/email-otp/send", [EmailOtpController::class, 'send']);
+        $router->post("{$p}/auth/email-otp/verify", [EmailOtpController::class, 'verify']);
         $router->get("{$p}/auth/me", [AuthController::class, 'me']);
         $router->get("{$p}/auth/session", [AuthController::class, 'validateSession']);
         $router->get("{$p}/auth/validate-session", [AuthController::class, 'validateSession']);
@@ -43,7 +49,6 @@ function registerApiRoutes(Router $router): void {
         $router->post("{$p}/users", [UserController::class, 'create']);
         $router->get("{$p}/users/{id}", [UserController::class, 'getDetail']);
         $router->patch("{$p}/users/{id}", [UserController::class, 'update']);
-        $router->post("{$p}/users/{id}/reset-password", [UserController::class, 'resetPassword']);
         $router->delete("{$p}/users/{id}", [UserController::class, 'delete']);
 
         // --------------------------------------------------------------------------

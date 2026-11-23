@@ -36,7 +36,18 @@ try {
     // 2. Connect directly to the database
     $pdo = Database::getConnection(true);
 
-    // 3. Read and execute database.sql
+    // 3. Remove all existing tables before replaying the schema.
+    // This also removes tables left by an earlier schema version that may
+    // reference tables in this script.
+    $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
+    $tables = $pdo->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'")
+        ->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($tables as $table) {
+        $pdo->exec("DROP TABLE IF EXISTS `" . str_replace('`', '``', (string) $table) . "`");
+    }
+    $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
+
+    // 4. Read and execute database.sql
     $sqlFile = __DIR__ . '/database.sql';
     if (!file_exists($sqlFile)) {
         throw new Exception("File database.sql tidak ditemukan!");
@@ -52,6 +63,7 @@ try {
     output("--------------------------------------------------", $isCli);
     output("Tabel yang dibuat:", $isCli);
     output(" - users", $isCli);
+    output(" - email_otps", $isCli);
     output(" - sessions", $isCli);
     output(" - interactions", $isCli);
     output(" - voting_questions", $isCli);
@@ -64,7 +76,7 @@ try {
     output("", $isCli);
     output("Akun bawaan yang tersedia:", $isCli);
     output(" - Administrator : admin / admin12345 (admin@forafa.app)", $isCli);
-    output(" - User 1        : rina / rina12345 (rina@desa-mekar.id)", $isCli);
+    output(" - User 1        : forafa / forafa123 (rina@desa-mekar.id)", $isCli);
     output(" - User 2        : budi_rw / budi12345 (budi@rw05.id)", $isCli);
     output("--------------------------------------------------", $isCli);
 

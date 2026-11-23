@@ -15,6 +15,7 @@
 -- ------------------------------------------------------------------------------
 -- Table Cleanup
 -- ------------------------------------------------------------------------------
+SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS `recommendation_results`;
 DROP TABLE IF EXISTS `recommendation_rules`;
 DROP TABLE IF EXISTS `notifications`;
@@ -27,6 +28,7 @@ DROP TABLE IF EXISTS `responses`;
 DROP TABLE IF EXISTS `interactions`;
 DROP TABLE IF EXISTS `sessions`;
 DROP TABLE IF EXISTS `users`;
+SET FOREIGN_KEY_CHECKS = 1;
 
 -- ------------------------------------------------------------------------------
 -- 1. Table: users
@@ -37,6 +39,10 @@ CREATE TABLE `users` (
   `email` VARCHAR(255) NOT NULL,
   `password_hash` VARCHAR(255) NOT NULL,
   `role` VARCHAR(20) NOT NULL DEFAULT 'User',
+  `bio` VARCHAR(160) NULL,
+  `avatar` TEXT NULL,
+  `username_changed_at` DATETIME NULL,
+  `email_changed_at` DATETIME NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_users_username` (`username`),
@@ -186,7 +192,7 @@ CREATE TABLE `interaction_participants` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------
--- 12. Table: recommendation_rules (Aturan IF-ELSE Rekomendasi Voting)
+-- 10. Table: recommendation_rules (Aturan IF-ELSE Rekomendasi Voting)
 -- ------------------------------------------------------------------------------
 CREATE TABLE `recommendation_rules` (
   `id` VARCHAR(50) NOT NULL,
@@ -206,7 +212,7 @@ CREATE TABLE `recommendation_rules` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------
--- 13. Table: recommendation_results (Hasil Rekomendasi per Pengisian)
+-- 11. Table: recommendation_results (Hasil Rekomendasi per Pengisian)
 -- ------------------------------------------------------------------------------
 CREATE TABLE `recommendation_results` (
   `id` VARCHAR(50) NOT NULL,
@@ -224,7 +230,18 @@ CREATE TABLE `recommendation_results` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------
--- 11. Table: notifications (Notifikasi Balasan untuk Pengisi)
+-- 12. Table: rate_limits (Penyimpanan Counter Rate Limiting)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `rate_limits` (
+  `key_hash` VARCHAR(64) NOT NULL,
+  `hits` INT NOT NULL DEFAULT 1,
+  `reset_at` DATETIME NOT NULL,
+  PRIMARY KEY (`key_hash`),
+  KEY `idx_rate_limits_reset` (`reset_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 13. Table: notifications (Notifikasi Balasan untuk Pengisi)
 -- ------------------------------------------------------------------------------
 CREATE TABLE `notifications` (
   `id` VARCHAR(50) NOT NULL,
@@ -245,24 +262,13 @@ CREATE TABLE `notifications` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------------------
--- 10. Table: rate_limits (Penyimpanan Counter Rate Limiting)
--- ------------------------------------------------------------------------------
-CREATE TABLE `rate_limits` (
-  `key_hash` VARCHAR(64) NOT NULL,
-  `hits` INT NOT NULL DEFAULT 1,
-  `reset_at` DATETIME NOT NULL,
-  PRIMARY KEY (`key_hash`),
-  KEY `idx_rate_limits_reset` (`reset_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ------------------------------------------------------------------------------
 -- SEED DATA
 -- ------------------------------------------------------------------------------
 
--- Seed Users (Passwords: admin12345, rina12345, budi12345)
+-- Seed Users (Passwords: admin12345, forafa123, budi12345)
 INSERT INTO `users` (`id`, `username`, `email`, `password_hash`, `role`, `created_at`) VALUES
 ('u1', 'admin', 'admin@forafa.app', '$2y$10$jDdwQk2WUnbUM5XFJCQoB./vsH9.F7yOQnVCw.xKyB0vjKNvnJhce', 'Administrator', NOW() - INTERVAL 40 DAY),
-('u2', 'rina', 'rina@desa-mekar.id', '$2y$10$lltfLgnPLT4jc1NswDoLyedNK9OVsdLj0x7/gIPRqNFl5y2EFNNQC', 'User', NOW() - INTERVAL 33 DAY),
+('u2', 'forafa', 'rina@desa-mekar.id', '$2y$10$VqdpHBQQtsmxuT3D4Vv4C.quHuFIKvy66azOjkDe/wGUTmbzRywNC', 'User', NOW() - INTERVAL 33 DAY),
 ('u3', 'budi_rw', 'budi@rw05.id', '$2y$10$VqqUhYBx1T4VgjY/VFK25e8OBpWVsv17383couDyfUJK2sANEqQDK', 'User', NOW() - INTERVAL 25 DAY);
 
 -- Seed Interactions
